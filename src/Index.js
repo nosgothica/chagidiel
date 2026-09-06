@@ -204,14 +204,26 @@ function twilioMessagingConfigured(env) {
   return !!(twilioCoreConfigured(env) && env.TWILIO_FROM);
 }
 
-async function sendEmail(env, to, content, purpose = 'login') {
+async function sendEmail(env, to, content, purpose = 'alert') {
   if (!env.RESEND_API_KEY || !env.RESEND_FROM) return { ok: false, configured: false, provider: 'resend', error: 'RESEND_API_KEY and RESEND_FROM are required.' };
-  const isLogin = purpose === 'login';
-  const subject = isLogin ? 'Your Chagidiel login code' : 'Chagidiel - your protagonist is needed';
-  const text = isLogin ? `Your Chagidiel login code is ${content}. It expires in 10 minutes.` : String(content);
-  const html = isLogin
-    ? `<div style="background:#090807;color:#d8d0bc;padding:28px;font-family:Georgia,serif"><div style="color:#8f1f22;letter-spacing:.18em;text-transform:uppercase;font-size:12px">Chagidiel</div><h1 style="font-weight:400">Your login code</h1><p>Enter this six-digit code to continue:</p><div style="font-size:32px;letter-spacing:.22em;color:#fff;margin:24px 0">${content}</div><p style="color:#9c9588">This code expires in 10 minutes. If you did not request it, you can ignore this message.</p></div>`
-    : `<div style="background:#090807;color:#d8d0bc;padding:28px;font-family:Georgia,serif"><div style="color:#8f1f22;letter-spacing:.18em;text-transform:uppercase;font-size:12px">Chagidiel</div><p>${String(content).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}</p></div>`;
+  const escapeHtml = value => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  let subject;
+  let text;
+  let html;
+  if (purpose === 'reset') {
+    const resetUrl = String(content);
+    subject = 'Reset your Chagidiel password';
+    text = `A password reset was requested for your Chagidiel account. Open this link within 60 minutes: ${resetUrl}\n\nIf you did not request this, you can ignore this message.`;
+    html = `<div style="background:#090807;color:#d8d0bc;padding:28px;font-family:Georgia,serif"><div style="color:#8f1f22;letter-spacing:.18em;text-transform:uppercase;font-size:12px">Chagidiel</div><h1 style="font-weight:400">Password reset</h1><p>A password reset was requested for your account.</p><p><a style="display:inline-block;padding:12px 16px;background:#551317;color:#fff;text-decoration:none" href="${escapeHtml(resetUrl)}">Reset password</a></p><p style="color:#9c9588">This link expires in 60 minutes. If you did not request it, you can ignore this message.</p></div>`;
+  } else if (purpose === 'login') {
+    subject = 'Your Chagidiel login code';
+    text = `Your Chagidiel login code is ${content}. It expires in 10 minutes.`;
+    html = `<div style="background:#090807;color:#d8d0bc;padding:28px;font-family:Georgia,serif"><div style="color:#8f1f22;letter-spacing:.18em;text-transform:uppercase;font-size:12px">Chagidiel</div><h1 style="font-weight:400">Your login code</h1><p>Enter this six-digit code to continue:</p><div style="font-size:32px;letter-spacing:.22em;color:#fff;margin:24px 0">${escapeHtml(content)}</div><p style="color:#9c9588">This code expires in 10 minutes. If you did not request it, you can ignore this message.</p></div>`;
+  } else {
+    subject = 'Chagidiel - your protagonist is needed';
+    text = String(content);
+    html = `<div style="background:#090807;color:#d8d0bc;padding:28px;font-family:Georgia,serif"><div style="color:#8f1f22;letter-spacing:.18em;text-transform:uppercase;font-size:12px">Chagidiel</div><p>${escapeHtml(content)}</p></div>`;
+  }
   try {
     const r = await fetch('https://api.resend.com/emails', {
       method: 'POST',
@@ -275,6 +287,60 @@ async function checkTwilioVerification(env, to, code) {
   } catch (e) {
     return { ok: false, configured: true, provider: 'twilio_verify', error: `Twilio Verify network error: ${String(e?.message || e)}` };
   }
+}
+
+const PASSWORD_ITERATIONS = 210000;
+const RESET_TTL_MS = 60 * 60 * 1000;
+
+function validPassword(password) {
+  const value = String(password || '');
+  return value.length >= 10 && value.length <= 128;
+}
+function equalBytes(a, b) {
+  if (!(a instanceof Uint8Array) || !(b instanceof Uint8Array) || a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
+  return diff === 0;
+}
+async function derivePassword(password, salt = null, iterations = PASSWORD_ITERATIONS) {
+  const saltBytes = salt ? unbase64url(salt) : crypto.getRandomValues(new Uint8Array(16));
+  const keyMaterial = await crypto.subtle.importKey('raw', new TextEncoder().encode(String(password)), 'PBKDF2', false, ['deriveBits']);
+  const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt: saltBytes, iterations }, keyMaterial, 256);
+  return { algorithm: 'PBKDF2-SHA256', iterations, salt: base64url(saltBytes), hash: base64url(new Uint8Array(bits)) };
+}
+async function verifyPassword(password, record) {
+  if (!record?.salt || !record?.hash || !record?.iterations) return false;
+  const candidate = await derivePassword(password, record.salt, Number(record.iterations));
+  return equalBytes(unbase64url(candidate.hash), unbase64url(record.hash));
+}
+function randomResetToken() {
+  const b = crypto.getRandomValues(new Uint8Array(32));
+  return base64url(b);
+}
+function publicAccount(user) {
+  if (!user) return null;
+  return {
+    uid: user.uid,
+    email: user.email,
+    contact: user.email,
+    method: 'email',
+    role: user.role || 'player',
+    disabled: !!user.disabled,
+    createdAt: user.createdAt || null,
+    lastLoginAt: user.lastLoginAt || null,
+    passwordChangedAt: user.passwordChangedAt || null,
+  };
+}
+async function signUserSession(env, user) {
+  return signSession(env, {
+    uid: user.uid,
+    contact: user.email,
+    email: user.email,
+    method: 'email',
+    role: user.role || 'player',
+    sv: Number(user.sessionVersion || 1),
+    exp: Date.now() + 30 * 24 * 60 * 60 * 1000,
+  });
 }
 
 function outcome(total) { return total >= 15 ? 'complete' : total >= 10 ? 'complication' : 'failure'; }
@@ -493,105 +559,211 @@ async function safeNotify(env, player, message) {
 
 export class AuthRoom {
   constructor(state, env) { this.state = state; this.env = env; }
+
+  async userByEmail(email) {
+    const normalized = normalizeContact('email', email);
+    if (!normalized || !validEmail(normalized)) return null;
+    const uid = await userIdFor('email', normalized);
+    return await this.state.storage.get(`user:${uid}`) || null;
+  }
+
+  async ensureBootstrapAdmin() {
+    const email = normalizeContact('email', this.env.ADMIN_EMAIL || '');
+    const password = String(this.env.ADMIN_PASSWORD || '');
+    if (!email || !validEmail(email) || !password) return null;
+    const uid = await userIdFor('email', email);
+    const marker = await this.state.storage.get('admin-bootstrap-applied');
+    let user = await this.state.storage.get(`user:${uid}`);
+    let changed = false;
+    if (!user) {
+      user = {
+        uid,
+        email,
+        role: 'admin',
+        disabled: false,
+        password: await derivePassword(password),
+        sessionVersion: 1,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        passwordChangedAt: Date.now(),
+        lastLoginAt: null,
+      };
+      changed = true;
+    } else {
+      if (user.role !== 'admin') { user.role = 'admin'; changed = true; }
+      if (!marker) { user.password = await derivePassword(password); user.passwordChangedAt = Date.now(); user.sessionVersion = Number(user.sessionVersion || 1) + 1; changed = true; }
+      if (!user.sessionVersion) { user.sessionVersion = 1; changed = true; }
+      if (user.disabled) { user.disabled = false; changed = true; }
+      if (changed) user.updatedAt = Date.now();
+    }
+    if (changed) await this.state.storage.put(`user:${uid}`, user);
+    if (!marker) await this.state.storage.put('admin-bootstrap-applied', { uid, email, at: Date.now() });
+    return user;
+  }
+
+  async issueReset(user, origin, issuedBy = 'self', deliver = true) {
+    const previousHash = await this.state.storage.get(`reset-current:${user.uid}`);
+    if (previousHash) await this.state.storage.delete(`reset:${previousHash}`);
+    const token = randomResetToken();
+    const tokenHash = base64url(await sha(token));
+    const exp = Date.now() + RESET_TTL_MS;
+    await this.state.storage.put(`reset:${tokenHash}`, { uid: user.uid, exp, issuedBy, createdAt: Date.now() });
+    await this.state.storage.put(`reset-current:${user.uid}`, tokenHash);
+    const base = String(origin || '').replace(/\/$/, '');
+    const resetUrl = `${base}/?reset=${encodeURIComponent(token)}`;
+    let delivery = { ok: false, configured: false, provider: 'manual', error: 'Email delivery is not configured.' };
+    if (deliver) delivery = await sendEmail(this.env, user.email, resetUrl, 'reset');
+    return { token, resetUrl, exp, delivery };
+  }
+
   async fetch(request) {
     const url = new URL(request.url);
+    await this.ensureBootstrapAdmin();
+
+    if (url.pathname === '/register') {
+      if (request.method !== 'POST') return json({ error: 'Method not allowed.' }, 405);
+      let body; try { body = await request.json(); } catch (_) { return json({ error: 'Invalid request.' }, 400); }
+      const email = normalizeContact('email', body.email);
+      const password = String(body.password || '');
+      if (!email || !validEmail(email)) return json({ error: 'Enter a valid email address.' }, 400);
+      if (!validPassword(password)) return json({ error: 'Password must be between 10 and 128 characters.' }, 400);
+      const uid = await userIdFor('email', email);
+      if (await this.state.storage.get(`user:${uid}`)) return json({ error: 'An account already exists for that email.' }, 409);
+      const now = Date.now();
+      const user = { uid, email, role: 'player', disabled: false, password: await derivePassword(password), sessionVersion: 1, createdAt: now, updatedAt: now, passwordChangedAt: now, lastLoginAt: now };
+      await this.state.storage.put(`user:${uid}`, user);
+      const token = await signUserSession(this.env, user);
+      return json({ ok: true, token, user: publicAccount(user) });
+    }
+
+    if (url.pathname === '/login') {
+      if (request.method !== 'POST') return json({ error: 'Method not allowed.' }, 405);
+      let body; try { body = await request.json(); } catch (_) { return json({ error: 'Invalid request.' }, 400); }
+      const email = normalizeContact('email', body.email);
+      const password = String(body.password || '');
+      if (!email || !validEmail(email) || !password) return json({ error: 'Invalid email or password.' }, 401);
+      const user = await this.userByEmail(email);
+      if (!user || user.disabled) return json({ error: 'Invalid email or password.' }, 401);
+      const now = Date.now();
+      if (user.lockUntil && user.lockUntil > now) return json({ error: 'Too many failed attempts. Try again later.' }, 429);
+      if (!(await verifyPassword(password, user.password))) {
+        user.failedLogins = Number(user.failedLogins || 0) + 1;
+        if (user.failedLogins >= 8) { user.lockUntil = now + 15 * 60 * 1000; user.failedLogins = 0; }
+        user.updatedAt = now;
+        await this.state.storage.put(`user:${user.uid}`, user);
+        return json({ error: 'Invalid email or password.' }, 401);
+      }
+      user.failedLogins = 0; user.lockUntil = null; user.lastLoginAt = now; user.updatedAt = now;
+      if (!user.sessionVersion) user.sessionVersion = 1;
+      await this.state.storage.put(`user:${user.uid}`, user);
+      const token = await signUserSession(this.env, user);
+      return json({ ok: true, token, user: publicAccount(user) });
+    }
+
+    if (url.pathname === '/session') {
+      if (request.method !== 'POST') return json({ error: 'Method not allowed.' }, 405);
+      let body; try { body = await request.json(); } catch (_) { return json({ error: 'Invalid request.' }, 400); }
+      const user = await this.state.storage.get(`user:${String(body.uid || '')}`);
+      if (!user || user.disabled) return json({ error: 'Session is no longer valid.' }, 401);
+      if (Number(body.sv || 0) !== Number(user.sessionVersion || 1)) return json({ error: 'Session is no longer valid.' }, 401);
+      return json({ ok: true, user: publicAccount(user) });
+    }
+
+    if (url.pathname === '/forgot') {
+      if (request.method !== 'POST') return json({ error: 'Method not allowed.' }, 405);
+      let body; try { body = await request.json(); } catch (_) { return json({ error: 'Invalid request.' }, 400); }
+      const email = normalizeContact('email', body.email);
+      const user = await this.userByEmail(email);
+      let delivery = null;
+      if (user && !user.disabled) {
+        const issued = await this.issueReset(user, request.headers.get('x-chagidiel-origin') || body.origin || '', 'self', true);
+        delivery = issued.delivery?.ok ? 'email' : 'admin';
+      }
+      return json({ ok: true, message: 'If that account exists, a password-reset request has been created.', delivery });
+    }
+
+    if (url.pathname === '/reset') {
+      if (request.method !== 'POST') return json({ error: 'Method not allowed.' }, 405);
+      let body; try { body = await request.json(); } catch (_) { return json({ error: 'Invalid request.' }, 400); }
+      const token = String(body.token || '').trim();
+      const password = String(body.password || '');
+      if (!token) return json({ error: 'Reset token is missing.' }, 400);
+      if (!validPassword(password)) return json({ error: 'Password must be between 10 and 128 characters.' }, 400);
+      const tokenHash = base64url(await sha(token));
+      const rec = await this.state.storage.get(`reset:${tokenHash}`);
+      if (!rec || rec.exp < Date.now()) return json({ error: 'That reset link is invalid or has expired.' }, 400);
+      const current = await this.state.storage.get(`reset-current:${rec.uid}`);
+      if (current !== tokenHash) return json({ error: 'That reset link has already been replaced.' }, 400);
+      const user = await this.state.storage.get(`user:${rec.uid}`);
+      if (!user || user.disabled) return json({ error: 'That reset link is no longer valid.' }, 400);
+      user.password = await derivePassword(password);
+      user.passwordChangedAt = Date.now();
+      user.updatedAt = Date.now();
+      user.sessionVersion = Number(user.sessionVersion || 1) + 1;
+      user.failedLogins = 0; user.lockUntil = null;
+      await this.state.storage.put(`user:${user.uid}`, user);
+      await this.state.storage.delete(`reset:${tokenHash}`);
+      await this.state.storage.delete(`reset-current:${user.uid}`);
+      return json({ ok: true });
+    }
+
+    if (url.pathname === '/admin/users') {
+      if (request.headers.get('x-chagidiel-admin') !== '1') return json({ error: 'Administrator access required.' }, 403);
+      const listed = await this.state.storage.list({ prefix: 'user:' });
+      const users = [...listed.values()].map(publicAccount).sort((a, b) => String(a.email).localeCompare(String(b.email)));
+      return json({ ok: true, users, emailResetDeliveryConfigured: !!(this.env.RESEND_API_KEY && this.env.RESEND_FROM) });
+    }
+
+    if (url.pathname === '/admin/reset') {
+      if (request.method !== 'POST') return json({ error: 'Method not allowed.' }, 405);
+      if (request.headers.get('x-chagidiel-admin') !== '1') return json({ error: 'Administrator access required.' }, 403);
+      let body; try { body = await request.json(); } catch (_) { return json({ error: 'Invalid request.' }, 400); }
+      const uid = String(body.uid || '');
+      const user = await this.state.storage.get(`user:${uid}`);
+      if (!user || user.disabled) return json({ error: 'Account not found.' }, 404);
+      const issued = await this.issueReset(user, request.headers.get('x-chagidiel-origin') || body.origin || '', request.headers.get('x-chagidiel-admin-uid') || 'admin', true);
+      return json({
+        ok: true,
+        user: publicAccount(user),
+        resetUrl: issued.resetUrl,
+        expiresAt: issued.exp,
+        emailed: !!issued.delivery?.ok,
+        emailConfigured: issued.delivery?.configured !== false,
+        emailError: issued.delivery?.ok ? null : (issued.delivery?.error || null),
+      });
+    }
+
+    // Legacy one-time-code endpoints are retained for old beta clients, but the new UI uses password accounts.
     if (url.pathname === '/request') {
       let body;
       try { body = await request.json(); } catch (_) { return json({ error: 'Invalid request.' }, 400); }
       const method = body.method === 'sms' ? 'sms' : 'email';
       const contact = normalizeContact(method, body.value);
-      if (!contact || (method === 'email' && !validEmail(contact)) || (method === 'sms' && !validPhone(contact))) {
-        return json({ error: method === 'sms' ? 'Enter a valid mobile number. US 10-digit numbers are accepted; international numbers should include the country code.' : 'Enter a valid email address.' }, 400);
-      }
-
-      const rateKey = `otp-rate:${method}:${contact}`;
-      const now = Date.now();
-      const rate = await this.state.storage.get(rateKey) || { window: now, count: 0, last: 0 };
-      if (now - Number(rate.last || 0) < 45_000) return json({ error: 'Please wait about a minute before requesting another code.', retryAfter: 45 }, 429);
-      if (now - Number(rate.window || now) >= 60 * 60 * 1000) { rate.window = now; rate.count = 0; }
-      if (Number(rate.count || 0) >= 6) return json({ error: 'Too many verification requests for this address. Try again later.' }, 429);
-
-      const devOtp = String(this.env.DEV_OTP || '').toLowerCase() === 'true';
-      let result;
-      let code = null;
-      let providerMode = 'local';
-
-      if (method === 'sms' && twilioVerifyConfigured(this.env)) {
-        result = await startTwilioVerification(this.env, contact);
-        providerMode = 'twilio_verify';
-        if (result.ok) {
-          await this.state.storage.put(`otp-meta:${method}:${contact}`, { provider: providerMode, exp: now + 10 * 60 * 1000 });
-        }
-      } else {
-        code = randomCode();
-        const hash = base64url(await sha(code));
-        await this.state.storage.put(`otp:${method}:${contact}`, { hash, exp: now + 10 * 60 * 1000, attempts: 0 });
-        if (method === 'sms') {
-          result = await sendSmsMessage(this.env, contact, `Your Chagidiel login code is ${code}. It expires in 10 minutes.`);
-          providerMode = 'twilio_messages';
-        } else {
-          result = await sendEmail(this.env, contact, code, 'login');
-          providerMode = 'resend';
-        }
-      }
-
-      if (result?.ok) {
-        rate.count = Number(rate.count || 0) + 1; rate.last = now;
-        await this.state.storage.put(rateKey, rate);
-        return json({ ok: true, sent: true, provider: providerMode });
-      }
-
-      if (devOtp) {
-        if (!code) {
-          code = randomCode();
-          const hash = base64url(await sha(code));
-          await this.state.storage.put(`otp:${method}:${contact}`, { hash, exp: now + 10 * 60 * 1000, attempts: 0 });
-          await this.state.storage.put(`otp-meta:${method}:${contact}`, { provider: 'local', exp: now + 10 * 60 * 1000 });
-        }
-        rate.count = Number(rate.count || 0) + 1; rate.last = now;
-        await this.state.storage.put(rateKey, rate);
-        return json({ ok: true, sent: false, provider: providerMode, devCode: code, warning: result?.error || 'Provider delivery failed; using development code.' });
-      }
-
-      await this.state.storage.delete(`otp:${method}:${contact}`);
-      await this.state.storage.delete(`otp-meta:${method}:${contact}`);
-      const status = result?.configured === false ? 503 : 502;
-      return json({ error: result?.configured === false ? `${method === 'sms' ? 'SMS' : 'Email'} login is not configured yet.` : `The ${method === 'sms' ? 'SMS' : 'email'} provider rejected the verification request.`, detail: result?.error || 'Unknown provider error.', provider: providerMode }, status);
+      if (!contact || (method === 'email' && !validEmail(contact)) || (method === 'sms' && !validPhone(contact))) return json({ error: 'Enter a valid contact address.' }, 400);
+      const code = randomCode();
+      const hash = base64url(await sha(code));
+      await this.state.storage.put(`otp:${method}:${contact}`, { hash, exp: Date.now() + 10 * 60 * 1000, attempts: 0 });
+      const result = method === 'sms' ? await sendSmsMessage(this.env, contact, `Your Chagidiel login code is ${code}. It expires in 10 minutes.`) : await sendEmail(this.env, contact, code, 'login');
+      if (result?.ok) return json({ ok: true, sent: true, provider: result.provider });
+      if (String(this.env.DEV_OTP || '').toLowerCase() === 'true') return json({ ok: true, sent: false, provider: result?.provider || 'local', devCode: code, warning: result?.error || 'Provider delivery failed.' });
+      return json({ error: `${method === 'sms' ? 'SMS' : 'Email'} login is not configured yet.`, detail: result?.error || null }, result?.configured === false ? 503 : 502);
     }
 
     if (url.pathname === '/verify') {
-      let body;
-      try { body = await request.json(); } catch (_) { return json({ error: 'Invalid request.' }, 400); }
+      let body; try { body = await request.json(); } catch (_) { return json({ error: 'Invalid request.' }, 400); }
       const method = body.method === 'sms' ? 'sms' : 'email';
       const contact = normalizeContact(method, body.value);
-      const code = String(body.code || '').trim();
-      if (!/^\d{4,10}$/.test(code)) return json({ error: 'Enter the verification code you received.' }, 400);
-
-      const metaKey = `otp-meta:${method}:${contact}`;
-      const meta = await this.state.storage.get(metaKey);
-      if (method === 'sms' && meta?.provider === 'twilio_verify') {
-        if (meta.exp < Date.now()) return json({ error: 'That code has expired. Request another code.' }, 400);
-        const checked = await checkTwilioVerification(this.env, contact, code);
-        if (!checked.ok) {
-          if (checked.configured && checked.status && checked.status !== 'approved') return json({ error: 'Incorrect or expired code.' }, 400);
-          return json({ error: 'SMS verification could not be checked.', detail: checked.error || 'Twilio Verify error.' }, checked.configured === false ? 503 : 502);
-        }
-        await this.state.storage.delete(metaKey);
-      } else {
-        const key = `otp:${method}:${contact}`;
-        const rec = await this.state.storage.get(key);
-        if (!rec || rec.exp < Date.now()) return json({ error: 'That code has expired. Request another code.' }, 400);
-        if (rec.attempts >= 6) return json({ error: 'Too many attempts. Request another code.' }, 429);
-        const hash = base64url(await sha(code));
-        if (hash !== rec.hash) { rec.attempts++; await this.state.storage.put(key, rec); return json({ error: 'Incorrect code.' }, 400); }
-        await this.state.storage.delete(key);
-        await this.state.storage.delete(metaKey);
-      }
-
+      const key = `otp:${method}:${contact}`;
+      const rec = await this.state.storage.get(key);
+      if (!rec || rec.exp < Date.now()) return json({ error: 'That code has expired.' }, 400);
+      const hash = base64url(await sha(String(body.code || '').trim()));
+      if (hash !== rec.hash) return json({ error: 'Incorrect code.' }, 400);
+      await this.state.storage.delete(key);
       const uid = await userIdFor(method, contact);
-      const token = await signSession(this.env, { uid, contact, method, exp: Date.now() + 30 * 24 * 60 * 60 * 1000 });
-      return json({ ok: true, token, user: { uid, contact, method } });
+      const token = await signSession(this.env, { uid, contact, method, role: 'legacy', sv: 0, exp: Date.now() + 24 * 60 * 60 * 1000 });
+      return json({ ok: true, token, user: { uid, contact, method, role: 'legacy' }, legacy: true });
     }
+
     return json({ error: 'Not found.' }, 404);
   }
 }
@@ -741,9 +913,16 @@ async function tts(env, voiceId, text, key) {
   const audio = await r.arrayBuffer(); await env.NARRATION_AUDIO.put(objectKey,audio,{httpMetadata:{contentType:'audio/mpeg'}}); return new Response(audio,{headers:{'content-type':'audio/mpeg','x-narration-cache':'MISS'}});
 }
 
-async function authFromRequest(request, env, url) { return verifySession(env, bearer(request, url)); }
 function campaignStub(env, id) { return env.CAMPAIGNS.get(env.CAMPAIGNS.idFromName(id)); }
 function authStub(env) { return env.AUTH.get(env.AUTH.idFromName('global')); }
+async function authFromRequest(request, env, url) {
+  const payload = await verifySession(env, bearer(request, url));
+  if (!payload?.uid) return null;
+  const checked = await authStub(env).fetch('https://auth/session', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ uid: payload.uid, sv: payload.sv }) });
+  if (!checked.ok) return null;
+  const data = await checked.json();
+  return data.user ? { ...payload, ...data.user, contact: data.user.email, method: 'email' } : null;
+}
 async function forwardCampaign(request, env, id, path, user, body = null) {
   const h = new Headers(); h.set('x-chagidiel-user', user.uid); h.set('x-chagidiel-contact', user.contact); h.set('x-chagidiel-method', user.method); if (body !== null) h.set('content-type','application/json');
   return campaignStub(env,id).fetch(`https://campaign${path}`, { method: body === null ? request.method : 'POST', headers:h, body: body === null ? undefined : JSON.stringify(body) });
@@ -755,7 +934,7 @@ export default {
     if (url.pathname === '/api/health') {
       const smsLoginMode = twilioVerifyConfigured(env) ? 'twilio_verify' : (twilioMessagingConfigured(env) ? 'twilio_messages' : null);
       return json({
-        ok:true, build:'chagidiel-beta-2-auth',
+        ok:true, build:'chagidiel-beta-3-accounts',
         elevenlabsConfigured:!!env.ELEVENLABS_API_KEY,
         r2Configured:!!env.NARRATION_AUDIO,
         authSecretConfigured:!!env.AUTH_SECRET,
@@ -766,16 +945,39 @@ export default {
         smsLoginMode,
         smsAlertsConfigured:twilioMessagingConfigured(env),
         twilioVerifyServiceConfigured:twilioVerifyConfigured(env),
-        webPushConfigured:false
+        webPushConfigured:false,
+        passwordAccounts:true,
+        adminBootstrapConfigured:!!(env.ADMIN_EMAIL&&env.ADMIN_PASSWORD),
+        passwordResetEmailConfigured:!!(env.RESEND_API_KEY&&env.RESEND_FROM)
       },200,{'cache-control':'no-store'});
     }
     if (url.pathname === '/api/config') return json({ vapidPublicKey: env.VAPID_PUBLIC_KEY || null, pushDelivery: false });
-    if (url.pathname === '/api/auth/request' || url.pathname === '/api/auth/verify') {
+    if (['/api/auth/register','/api/auth/login','/api/auth/forgot','/api/auth/reset','/api/auth/request','/api/auth/verify'].includes(url.pathname)) {
       if (request.method !== 'POST') return json({ error: 'Method not allowed.' }, 405);
-      const target = `https://auth${url.pathname.endsWith('request') ? '/request' : '/verify'}`;
+      const map = {
+        '/api/auth/register':'/register','/api/auth/login':'/login','/api/auth/forgot':'/forgot','/api/auth/reset':'/reset',
+        '/api/auth/request':'/request','/api/auth/verify':'/verify'
+      };
       const headers = new Headers(request.headers);
+      headers.set('x-chagidiel-origin', url.origin);
       const body = await request.text();
-      return authStub(env).fetch(target, { method: 'POST', headers, body });
+      return authStub(env).fetch(`https://auth${map[url.pathname]}`, { method: 'POST', headers, body });
+    }
+    if (url.pathname === '/api/auth/me') {
+      const user = await authFromRequest(request, env, url);
+      if (!user) return json({ error: 'Authentication required.' }, 401);
+      return json({ ok: true, user: { uid:user.uid, email:user.email, contact:user.email, method:'email', role:user.role, createdAt:user.createdAt, lastLoginAt:user.lastLoginAt } });
+    }
+    if (url.pathname === '/api/admin/users' && request.method === 'GET') {
+      const user = await authFromRequest(request, env, url);
+      if (!user || user.role !== 'admin') return json({ error: 'Administrator access required.' }, 403);
+      return authStub(env).fetch('https://auth/admin/users', { method:'GET', headers:{ 'x-chagidiel-admin':'1', 'x-chagidiel-admin-uid':user.uid, 'x-chagidiel-origin':url.origin } });
+    }
+    if (url.pathname === '/api/admin/reset' && request.method === 'POST') {
+      const user = await authFromRequest(request, env, url);
+      if (!user || user.role !== 'admin') return json({ error: 'Administrator access required.' }, 403);
+      const body = await request.text();
+      return authStub(env).fetch('https://auth/admin/reset', { method:'POST', headers:{ 'content-type':'application/json', 'x-chagidiel-admin':'1', 'x-chagidiel-admin-uid':user.uid, 'x-chagidiel-origin':url.origin }, body });
     }
     if (url.pathname === '/api/voices') { try { return json({ default_voice_id:DEFAULT_VOICE_ID, voices:await listVoices(env) }); } catch(e){ return json({error:String(e.message||e)},502); } }
     if (url.pathname === '/api/narration-page') {

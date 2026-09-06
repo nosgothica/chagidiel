@@ -1,0 +1,205 @@
+{
+  "campaign.cover": [
+    "campaign_cover_black_madonna"
+  ],
+  "ui.loading": [
+    "kult_winged_emblem",
+    "distressed_crack_divider",
+    "kult_winged_emblem_alt"
+  ],
+  "ui.story_lock": [
+    "kult_winged_emblem"
+  ],
+  "ui.chapter_transition": [
+    "kult_winged_emblem"
+  ],
+  "ui.divider": [
+    "distressed_crack_divider"
+  ],
+  "lore.leningrad_1941": [
+    "lore_black_madonna_awakening"
+  ],
+  "ch03.leningrad_1942": [
+    "lore_black_madonna_awakening"
+  ],
+  "ch06.black_madonna": [
+    "lore_black_madonna_awakening"
+  ],
+  "lore.chezenko_origin": [
+    "lore_chezenko_lictor_birth"
+  ],
+  "ch06.chezenko": [
+    "lore_chezenko_lictor_birth"
+  ],
+  "campaign.overview": [
+    "campaign_chain_of_events_collage"
+  ],
+  "ui.portrait_frame": [
+    "kult_ornate_portrait_frame"
+  ],
+  "ui.occult_frame": [
+    "kult_ornate_portrait_frame"
+  ],
+  "ch01.magda_hamburg_apartment": [
+    "ch01_magda_hamburg_apartment_map"
+  ],
+  "ch01.berlin_arrival": [
+    "ch01_magda_berlin_apartment_exterior"
+  ],
+  "ch01.magda_berlin_apartment": [
+    "ch01_magda_berlin_apartment_exterior",
+    "ch01_magda_berlin_apartment_map"
+  ],
+  "ch01.background_research": [
+    "ch01_medical_police_research_collage"
+  ],
+  "ch01.police_inquiries": [
+    "ch01_medical_police_research_collage"
+  ],
+  "ch01.slavic_association.interior": [
+    "ch01_slavic_association_top_floor_map"
+  ],
+  "ch01.slavic_association.infiltration": [
+    "ch01_slavic_association_top_floor_map",
+    "ch01_slavic_association_surveillance_collage"
+  ],
+  "ch01.slavic_association.surveillance": [
+    "ch01_slavic_association_surveillance_collage"
+  ],
+  "ch01.pogodin_mansion.exterior": [
+    "ch01_pogodin_mansion_collage"
+  ],
+  "ch01.pogodin_mansion.surveillance": [
+    "ch01_pogodin_mansion_collage"
+  ],
+  "ch01.pogodin_mansion.infiltration": [
+    "ch01_pogodin_mansion_basement_map",
+    "ch01_pogodin_guard_house_map"
+  ],
+  "ch01.pogodin_mansion.ritual": [
+    "ch01_pogodin_mansion_basement_map",
+    "ch01_pogodin_ritual_collage"
+  ],
+  "ui.roll_resolution": [
+    "resolution_fracture_01",
+    "resolution_fracture_02",
+    "resolution_fracture_03"
+  ],
+  "ui.story_lock_resolution": [
+    "resolution_fracture_01",
+    "resolution_fracture_02",
+    "resolution_fracture_03"
+  ],
+  "ch02.frankfurt_clinic.basement": [
+    "ch02_frankfurt_clinic_basement_map"
+  ],
+  "ch02.special_ward": [
+    "ch02_frankfurt_clinic_basement_map"
+  ],
+  "ch02.natalya_tatlina": [
+    "ch02_natalya_tatlina_collage"
+  ],
+  "ch03.dream_camp": [
+    "ch03_dream_camp_map"
+  ],
+  "ch03.camp_s17": [
+    "ch03_dream_camp_map"
+  ],
+  "ch03.colonel_nikitin": [
+    "ch03_colonel_nikitin_collage"
+  ],
+  "ch03.dream_camp.capture": [
+    "ch03_colonel_nikitin_collage"
+  ],
+  "ch04.germanische_gemeinschaft.infiltration": [
+    "ch04_germanische_gemeinschaft_first_floor_map",
+    "ch04_germanische_gemeinschaft_second_floor_map"
+  ],
+  "ch04.toxic_cafe.recon": [
+    "ch04_toxic_cafe_map"
+  ],
+  "ch04.toxic_cafe.operation": [
+    "ch04_toxic_cafe_map"
+  ],
+  "ch05.selivanova_contact": [
+    "ch05_selivanova_lictor_collage"
+  ],
+  "ch05.false_identities": [
+    "ch05_selivanova_lictor_collage"
+  ],
+  "ch05.slava_headquarters": [
+    "ch05_slava_headquarters_ground_floor_map",
+    "ch05_slava_headquarters_upper_floor_map"
+  ],
+  "ch05.harcombe_residence": [
+    "ch05_harcombe_residence_map"
+  ],
+  "ch05.f3.infiltration": [
+    "ch05_air_force_base_f3_map"
+  ],
+  "ch05.f3.escape": [
+    "ch05_air_force_base_f3_map"
+  ],
+  "ch05.f3.evidence": [
+    "ch05_f3_coup_evidence_collage"
+  ],
+  "ch05.coup_revelation": [
+    "ch05_f3_coup_evidence_collage"
+  ],
+  "ch05.m13.infiltration": [
+    "ch05_m13_level_6_map",
+    "ch05_m13_level_5_map",
+    "ch05_m13_level_4_map",
+    "ch05_m13_level_2_map",
+    "ch05_m13_level_1_map"
+  ],
+  "ch05.m13.control_room": [
+    "ch05_m13_level_3_map",
+    "ch05_m13_strelkov_collage"
+  ],
+  "ch05.m13.strelkov": [
+    "ch05_m13_level_3_map",
+    "ch05_m13_strelkov_collage"
+  ],
+  "ch06.black_cathedral": [
+    "ch06_black_cathedral_map"
+  ],
+  "ch06.black_cathedral.crypts": [
+    "ch06_black_cathedral_crypts_map"
+  ],
+  "ch06.black_madonna_statue": [
+    "ch06_black_cathedral_crypts_map"
+  ],
+  "ch06.kalenko_house": [
+    "ch06_kalenko_house_ground_floor_map",
+    "ch06_kalenko_house_upper_floor_map"
+  ],
+  "ch06.children_rescue": [
+    "ch06_kalenko_house_ground_floor_map",
+    "ch06_kalenko_house_upper_floor_map"
+  ],
+  "ch06.kalenko_house.basement": [
+    "ch06_kalenko_house_basement_map"
+  ],
+  "ch06.inferno_threshold": [
+    "ch06_kalenko_house_basement_map"
+  ],
+  "ch06.battle_of_incarnates": [
+    "ch06_battle_of_incarnates_collage"
+  ],
+  "ch06.children_freed": [
+    "ch06_battle_of_incarnates_collage"
+  ],
+  "ch06.calm_after_storm": [
+    "ch06_epilogue_collage"
+  ],
+  "ch06.epilogue": [
+    "ch06_epilogue_collage"
+  ],
+  "ui.portrait_frame_alt": [
+    "kult_ornate_frame_alt"
+  ],
+  "ui.end_card": [
+    "kult_winged_emblem_alt"
+  ]
+}

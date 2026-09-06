@@ -1,0 +1,1491 @@
+{
+  "version": 1,
+  "source": "The Black Madonna",
+  "assets": [
+    {
+      "id": "campaign_cover_black_madonna",
+      "source": {
+        "document": "KULT: Divinity Lost - The Black Madonna",
+        "pdf_page": 1,
+        "book_page": null,
+        "embedded_image_index": 1,
+        "original_file": "p001_i01_f1c76da062.jpeg"
+      },
+      "category": "art/lore",
+      "file": "art/lore/campaign_cover_black_madonna.webp",
+      "variants": {},
+      "scene_ids": [
+        "campaign.cover"
+      ],
+      "presentation": {
+        "mode": "hero",
+        "frame": "occult",
+        "wrap_desktop": "none",
+        "zoomable": false,
+        "case_file_eligible": false
+      },
+      "visibility": "shared",
+      "notes": "Campaign cover artwork; use sparingly for campaign landing/title.",
+      "dimensions": {
+        "width": 1210,
+        "height": 1635
+      }
+    },
+    {
+      "id": "kult_winged_emblem",
+      "source": {
+        "document": "KULT: Divinity Lost - The Black Madonna",
+        "pdf_page": 5,
+        "book_page": null,
+        "embedded_image_index": 1,
+        "original_file": "p005_i01_2516e5333a.png"
+      },
+      "category": "ui/motifs",
+      "file": "ui/motifs/kult_winged_emblem_bone.png",
+      "variants": {
+        "bone": "ui/motifs/kult_winged_emblem_bone.png",
+        "red": "ui/motifs/kult_winged_emblem_red.png",
+        "white": "ui/motifs/kult_winged_emblem_white.png"
+      },
+      "scene_ids": [
+        "ui.loading",
+        "ui.story_lock",
+        "ui.chapter_transition"
+      ],
+      "presentation": {
+        "mode": "symbol",
+        "frame": "none",
+        "wrap_desktop": "none",
+        "zoomable": false,
+        "case_file_eligible": false
+      },
+      "visibility": "shared",
+      "notes": "Primary extracted KULT emblem for private project UI.",
+      "dimensions": {
+        "width": 2612,
+        "height": 1975
+      }
+    },
+    {
+      "id": "distressed_crack_divider",
+      "source": {
+        "document": "KULT: Divinity Lost - The Black Madonna",
+        "pdf_page": 7,
+        "book_page": null,
+        "embedded_image_index": 2,
+        "original_file": "p007_i02_d096b4511c.png"
+      },
+      "category": "ui/motifs",
+      "file": "ui/motifs/distressed_crack_divider_bone.png",
+      "variants": {
+        "bone": "ui/motifs/distressed_crack_divider_bone.png",
+        "red": "ui/motifs/distressed_crack_divider_red.png",
+        "white": "ui/motifs/distressed_crack_divider_white.png"
+      },
+      "scene_ids": [
+        "ui.divider",
+        "ui.loading"
+      ],
+      "presentation": {
+        "mode": "ornament",
+        "frame": "none",
+        "wrap_desktop": "none",
+        "zoomable": false,
+        "case_file_eligible": false
+      },
+      "visibility": "shared",
+      "notes": "Distressed crack line ornament.",
+      "dimensions": {
+        "width": 2456,
+        "height": 864
+      }
+    },
+    {
+      "id": "lore_black_madonna_awakening",
+      "source": {
+        "document": "KULT: Divinity Lost - The Black Madonna",
+        "pdf_page": 13,
+        "book_page": 9,
+        "embedded_image_index": 1,
+        "original_file": "p013_i01_2b18ac682f.jpeg"
+      },
+      "category": "art/lore",
+      "file": "art/lore/lore_black_madonna_awakening.webp",
+      "variants": {},
+      "scene_ids": [
+        "lore.leningrad_1941",
+        "ch03.leningrad_1942",
+        "ch06.black_madonna"
+      ],
+      "presentation": {
+        "mode": "portrait",
+        "frame": "occult",
+        "wrap_desktop": "right",
+        "zoomable": false,
+        "case_file_eligible": false
+      },
+      "visibility": "shared",
+      "notes": "Historical/Black Madonna lore collage.",
+      "dimensions": {
+        "width": 348,
+        "height": 607
+      }
+    },
+    {
+      "id": "lore_chezenko_lictor_birth",
+      "source": {
+        "document": "KULT: Divinity Lost - The Black Madonna",
+        "pdf_page": 14,
+        "book_page": 10,
+        "embedded_image_index": 1,
+        "original_file": "p014_i01_c32eda4759.jpeg"
+      },
+      "category": "art/lore",
+      "file": "art/lore/lore_chezenko_lictor_birth.webp",
+      "variants": {},
+      "scene_ids": [
+        "lore.chezenko_origin",
+        "ch06.chezenko"
+      ],
+      "presentation": {
+        "mode": "portrait",
+        "frame": "occult",
+        "wrap_desktop": "left",
+        "zoomable": false,
+        "case_file_eligible": false
+      },
+      "visibility": "shared",
+      "notes": "Chezenko / lictor-origin collage associated with the historical background.",
+      "dimensions": {
+        "width": 348,
+        "height": 607
+      }
+    },
+    {
+      "id": "campaign_chain_of_events_collage",
+      "source": {
+        "document": "KULT: Divinity Lost - The Black Madonna",
+        "pdf_page": 23,
+        "book_page": 19,
+        "embedded_image_index": 1,
+        "original_file": "p023_i01_5500223fd8.jpeg"
+      },
+      "category": "art/lore",
+      "file": "art/lore/campaign_chain_of_events_collage.webp",
+      "variants": {},
+      "scene_ids": [
+        "campaign.overview"
+      ],
+      "presentation": {
+        "mode": "portrait",
+        "frame": "occult",
+        "wrap_desktop": "right",
+        "zoomable": false,
+        "case_file_eligible": false
+      },
+      "visibility": "shared",
+      "notes": "Campaign overview collage from the GM tips section.",
+      "dimensions": {
+        "width": 348,
+        "height": 607
+      }
+    },
+    {
+      "id": "kult_ornate_portrait_frame",
+      "source": {
+        "document": "KULT: Divinity Lost - The Black Madonna",
+        "pdf_page": 23,
+        "book_page": 19,
+        "embedded_image_index": 2,
+        "original_file": "p023_i02_7659ddaa76.png"
+      },
+      "category": "ui/frames",
+      "file": "ui/frames/kult_ornate_portrait_frame_bone.png",
+      "variants": {
+        "bone": "ui/frames/kult_ornate_portrait_frame_bone.png",
+        "red": "ui/frames/kult_ornate_portrait_frame_red.png",
+        "white": "ui/frames/kult_ornate_portrait_frame_white.png"
+      },
+      "scene_ids": [
+        "ui.portrait_frame",
+        "ui.occult_frame"
+      ],
+      "presentation": {
+        "mode": "frame",
+        "frame": "none",
+        "wrap_desktop": "none",
+        "zoomable": false,
+        "case_file_eligible": false
+      },
+      "visibility": "shared",
+      "notes": "Ornate extracted frame mask for portraits and supernatural inserts.",
+      "dimensions": {
+        "width": 1483,
+        "height": 2515
+      }
+    },
+    {
+      "id": "ch01_magda_hamburg_apartment_map",
+      "source": {
+        "document": "KULT: Divinity Lost - The Black Madonna",
+        "pdf_page": 29,
+        "book_page": 25,
+        "embedded_image_index": 1,
+        "original_file": "p029_i01_a4ced53c97.png"
+      },
+      "category": "art/maps",
+      "file": "art/maps/ch01_magda_hamburg_apartment_map.png",
+      "variants": {},
+      "scene_ids": [
+        "ch01.magda_hamburg_apartment"
+      ],
+      "presentation": {
+        "mode": "evidence",
+        "frame": "dossier",
+        "wrap_desktop": "none",
+        "zoomable": true,
+        "case_file_eligible": true
+      },
+      "visibility": "shared",
+      "notes": "Hamburg apartment floor plan; zoomable and case-file eligible.",
+      "dimensions": {
+        "width": 839,
+        "height": 573
+      }
+    },
+    {
+      "id": "ch01_magda_berlin_apartment_exterior",
+      "source": {
+        "document": "KULT: Divinity Lost - The Black Madonna",
+        "pdf_page": 31,
+        "book_page": 27,
+        "embedded_image_index": 1,
+        "original_file": "p031_i01_a2c89ab8e6.jpeg"
+      },
+      "category": "art/scenes",
+      "file": "art/scenes/ch01_magda_berlin_apartment_exterior.webp",
+      "variants": {},
+      "scene_ids": [
+        "ch01.berlin_arrival",
+        "ch01.magda_berlin_apartment"
+      ],
+      "presentation": {
+        "mode": "portrait",
+        "frame": "story",
+        "wrap_desktop": "right",
+        "zoomable": false,
+        "case_file_eligible": false
+      },
+      "visibility": "shared",
+      "notes": "Exterior/location art for Magda\u2019s Berlin apartment.",
+      "dimensions": {
+        "width": 348,
+        "height": 605
+      }
+    },
+    {
+      "id": "ch01_magda_berlin_apartment_map",
+      "source": {
+        "document": "KULT: Divinity Lost - The Black Madonna",
+        "pdf_page": 32,
+        "book_page": 28,
+        "embedded_image_index": 1,
+        "original_file": "p032_i01_2ff909d71e.png"
+      },
+      "category": "art/maps",
+      "file": "art/maps/ch01_magda_berlin_apartment_map.png",
+      "variants": {},
+      "scene_ids": [
+        "ch01.magda_berlin_apartment"
+      ],
+      "presentation": {
+        "mode": "evidence",
+        "frame": "dossier",
+        "wrap_desktop": "none",
+        "zoomable": true,
+        "case_file_eligible": true
+      },
+      "visibility": "shared",
+      "notes": "Berlin apartment floor plan; zoomable and case-file eligible.",
+      "dimensions": {
+        "width": 642,
+        "height": 610
+      }
+    },
+    {
+      "id": "ch01_medical_police_research_collage",
+      "source": {
+        "document": "KULT: Divinity Lost - The Black Madonna",
+        "pdf_page": 40,
+        "book_page": 36,
+        "embedded_image_index": 1,
+        "original_file": "p040_i01_3650266e07.jpeg"
+      },
+      "category": "art/scenes",
+      "file": "art/scenes/ch01_medical_police_research_collage.webp",
+      "variants": {},
+      "scene_ids": [
+        "ch01.background_research",
+        "ch01.police_inquiries"
+      ],
+      "presentation": {
+        "mode": "portrait",
+        "frame": "story",
+        "wrap_desktop": "left",
+        "zoomable": false,
+        "case_file_eligible": false
+      },
+      "visibility": "shared",
+      "notes": "Collage accompanying medical/police investigation material.",
+      "dimensions": {
+        "width": 348,
+        "height": 607
+      }
+    },
+    {
+      "id": "ch01_slavic_association_top_floor_map",
+      "source": {
+        "document": "KULT: Divinity Lost - The Black Madonna",
+        "pdf_page": 45,
+        "book_page": 41,
+        "embedded_image_index": 1,
+        "original_file": "p045_i01_7cfb0166db.png"
+      },
+      "category": "art/maps",
+      "file": "art/maps/ch01_slavic_association_top_floor_map.png",
+      "variants": {},
+      "scene_ids": [
+        "ch01.slavic_association.interior",
+        "ch01.slavic_association.infiltration"
+      ],
+      "presentation": {
+        "mode": "evidence",
+        "frame": "dossier",
+        "wrap_desktop": "none",
+        "zoomable": true,
+        "case_file_eligible": true
+      },
+      "visibility": "shared",
+      "notes": "Slavic Association top-floor plan.",
+      "dimensions": {
+        "width": 1086,
+        "height": 552
+      }
+    },
+    {
+      "id": "ch01_slavic_association_surveillance_collage",
+      "source": {
+        "document": "KULT: Divinity Lost - The Black Madonna",
+        "pdf_page": 47,
+        "book_page": 43,
+        "embedded_image_index": 1,
+        "original_file": "p047_i01_aab1ba86bf.jpeg"
+      },
+      "category": "art/scenes",
+      "file": "art/scenes/ch01_slavic_association_surveillance_collage.webp",
+      "variants": {},
+      "scene_ids": [
+        "ch01.slavic_association.surveillance",
+        "ch01.slavic_association.infiltration"
+      ],
+      "presentation": {
+        "mode": "portrait",
+        "frame": "story",
+        "wrap_desktop": "right",
+        "zoomable": false,
+        "case_file_eligible": false
+      },
+      "visibility": "shared",
+      "notes": "Surveillance/infiltration collage for Slavic Association.",
+      "dimensions": {
+        "width": 348,
+        "height": 607
+      }
+    },
+    {
+      "id": "ch01_pogodin_mansion_collage",
+      "source": {
+        "document": "KULT: Divinity Lost - The Black Madonna",
+        "pdf_page": 48,
+        "book_page": 44,
+        "embedded_image_index": 1,
+        "original_file": "p048_i01_8ec62cc660.jpeg"
+      },
+      "category": "art/scenes",
+      "file": "art/scenes/ch01_pogodin_mansion_collage.webp",
+      "variants": {},
+      "scene_ids": [
+        "ch01.pogodin_mansion.exterior",
+        "ch01.pogodin_mansion.surveillance"
+      ],
+      "presentation": {
+        "mode": "portrait",
+        "frame": "story",
+        "wrap_desktop": "left",
+        "zoomable": false,
+        "case_file_eligible": false
+      },
+      "visibility": "shared",
+      "notes": "Pogodin mansion section collage.",
+      "dimensions": {
+        "width": 348,
+        "height": 607
+      }
+    },
+    {
+      "id": "ch01_pogodin_mansion_basement_map",
+      "source": {
+        "document": "KULT: Divinity Lost - The Black Madonna",
+        "pdf_page": 52,
+        "book_page": 48,
+        "embedded_image_index": 1,
+        "original_file": "p052_i01_880af30009.png"
+      },
+      "category": "art/maps",
+      "file": "art/maps/ch01_pogodin_mansion_basement_map.png",
+      "variants": {},
+      "scene_ids": [
+        "ch01.pogodin_mansion.infiltration",
+        "ch01.pogodin_mansion.ritual"
+      ],
+      "presentation": {
+        "mode": "evidence",
+        "frame": "dossier",
+        "wrap_desktop": "none",
+        "zoomable": true,
+        "case_file_eligible": true
+      },
+      "visibility": "shared",
+      "notes": "Pogodin mansion basement plan.",
+      "dimensions": {
+        "width": 542,
+        "height": 572
+      }
+    },
+    {
+      "id": "ch01_pogodin_guard_house_map",
+      "source": {
+        "document": "KULT: Divinity Lost - The Black Madonna",
+        "pdf_page": 52,
+        "book_page": 48,
+        "embedded_image_index": 2,
+        "original_file": "p052_i02_6cccb5a34b.png"
+      },
+      "category": "art/maps",
+      "file": "art/maps/ch01_pogodin_guard_house_map.png",
+      "variants": {},
+      "scene_ids": [
+        "ch01.pogodin_mansion.infiltration"
+      ],
+      "presentation": {
+        "mode": "evidence",
+        "frame": "dossier",
+        "wrap_desktop": "none",
+        "zoomable": true,
+        "case_file_eligible": true
+      },
+      "visibility": "shared",
+      "notes": "Pogodin estate guard-house plan.",
+      "dimensions": {
+        "width": 344,
+        "height": 254
+      }
+    },
+    {
+      "id": "ch01_pogodin_ritual_collage",
+      "source": {
+        "document": "KULT: Divinity Lost - The Black Madonna",
+        "pdf_page": 53,
+        "book_page": 49,
+        "embedded_image_index": 1,
+        "original_file": "p053_i01_dc0de578c6.jpeg"
+      },
+      "category": "art/scenes",
+      "file": "art/scenes/ch01_pogodin_ritual_collage.webp",
+      "variants": {},
+      "scene_ids": [
+        "ch01.pogodin_mansion.ritual"
+      ],
+      "presentation": {
+        "mode": "portrait",
+        "frame": "occult",
+        "wrap_desktop": "right",
+        "zoomable": false,
+        "case_file_eligible": false
+      },
+      "visibility": "shared",
+      "notes": "Ritual/Inner Circle collage from the Pogodin mansion sequence.",
+      "dimensions": {
+        "width": 348,
+        "height": 603
+      }
+    },
+    {
+      "id": "resolution_fracture_01",
+      "source": {
+        "document": "KULT: Divinity Lost - The Black Madonna",
+        "pdf_page": 54,
+        "book_page": 50,
+        "embedded_image_index": 1,
+        "original_file": "p054_i01_882e51ef1d.png"
+      },
+      "category": "ui/motifs",
+      "file": "ui/motifs/resolution_fracture_01_bone.png",
+      "variants": {
+        "bone": "ui/motifs/resolution_fracture_01_bone.png",
+        "red": "ui/motifs/resolution_fracture_01_red.png",
+        "white": "ui/motifs/resolution_fracture_01_white.png"
+      },
+      "scene_ids": [
+        "ui.roll_resolution",
+        "ui.story_lock_resolution"
+      ],
+      "presentation": {
+        "mode": "symbol",
+        "frame": "none",
+        "wrap_desktop": "none",
+        "zoomable": false,
+        "case_file_eligible": false
+      },
+      "visibility": "shared",
+      "notes": "Cracked circular motif for tension/resolution overlays.",
+      "dimensions": {
+        "width": 1206,
+        "height": 1208
+      }
+    },
+    {
+      "id": "resolution_fracture_02",
+      "source": {
+        "document": "KULT: Divinity Lost - The Black Madonna",
+        "pdf_page": 56,
+        "book_page": 52,
+        "embedded_image_index": 1,
+        "original_file": "p056_i01_cb0b0e8a63.png"
+      },
+      "category": "ui/motifs",
+      "file": "ui/motifs/resolution_fracture_02_bone.png",
+      "variants": {
+        "bone": "ui/motifs/resolution_fracture_02_bone.png",
+        "red": "ui/motifs/resolution_fracture_02_red.png",
+        "white": "ui/motifs/resolution_fracture_02_white.png"
+      },
+      "scene_ids": [
+        "ui.roll_resolution",
+        "ui.story_lock_resolution"
+      ],
+      "presentation": {
+        "mode": "symbol",
+        "frame": "none",
+        "wrap_desktop": "none",
+        "zoomable": false,
+        "case_file_eligible": false
+      },
+      "visibility": "shared",
+      "notes": "Alternate cracked circular motif.",
+      "dimensions": {
+        "width": 1206,
+        "height": 1208
+      }
+    },
+    {
+      "id": "resolution_fracture_03",
+      "source": {
+        "document": "KULT: Divinity Lost - The Black Madonna",
+        "pdf_page": 57,
+        "book_page": 53,
+        "embedded_image_index": 1,
+        "original_file": "p057_i01_5682f4de2e.png"
+      },
+      "category": "ui/motifs",
+      "file": "ui/motifs/resolution_fracture_03_bone.png",
+      "variants": {
+        "bone": "ui/motifs/resolution_fracture_03_bone.png",
+        "red": "ui/motifs/resolution_fracture_03_red.png",
+        "white": "ui/motifs/resolution_fracture_03_white.png"
+      },
+      "scene_ids": [
+        "ui.roll_resolution",
+        "ui.story_lock_resolution"
+      ],
+      "presentation": {
+        "mode": "symbol",
+        "frame": "none",
+        "wrap_desktop": "none",
+        "zoomable": false,
+        "case_file_eligible": false
+      },
+      "visibility": "shared",
+      "notes": "Alternate cracked circular motif.",
+      "dimensions": {
+        "width": 1207,
+        "height": 1206
+      }
+    },
+    {
+      "id": "ch02_frankfurt_clinic_basement_map",
+      "source": {
+        "document": "KULT: Divinity Lost - The Black Madonna",
+        "pdf_page": 64,
+        "book_page": 60,
+        "embedded_image_index": 1,
+        "original_file": "p064_i01_4429421cc1.png"
+      },
+      "category": "art/maps",
+      "file": "art/maps/ch02_frankfurt_clinic_basement_map.png",
+      "variants": {},
+      "scene_ids": [
+        "ch02.frankfurt_clinic.basement",
+        "ch02.special_ward"
+      ],
+      "presentation": {
+        "mode": "evidence",
+        "frame": "dossier",
+        "wrap_desktop": "none",
+        "zoomable": true,
+        "case_file_eligible": true
+      },
+      "visibility": "shared",
+      "notes": "Frankfurt Clinic basement plan.",
+      "dimensions": {
+        "width": 696,
+        "height": 281
+      }
+    },
+    {
+      "id": "ch02_natalya_tatlina_collage",
+      "source": {
+        "document": "KULT: Divinity Lost - The Black Madonna",
+        "pdf_page": 66,
+        "book_page": 62,
+        "embedded_image_index": 1,
+        "original_file": "p066_i01_40f416d8f4.jpeg"
+      },
+      "category": "art/scenes",
+      "file": "art/scenes/ch02_natalya_tatlina_collage.webp",
+      "variants": {},
+      "scene_ids": [
+        "ch02.natalya_tatlina"
+      ],
+      "presentation": {
+        "mode": "portrait",
+        "frame": "story",
+        "wrap_desktop": "right",
+        "zoomable": false,
+        "case_file_eligible": false
+      },
+      "visibility": "shared",
+      "notes": "Natalya Tatlina section collage.",
+      "dimensions": {
+        "width": 348,
+        "height": 604
+      }
+    },
+    {
+      "id": "ch03_dream_camp_map",
+      "source": {
+        "document": "KULT: Divinity Lost - The Black Madonna",
+        "pdf_page": 76,
+        "book_page": 72,
+        "embedded_image_index": 1,
+        "original_file": "p076_i01_f3f16a95e0.png"
+      },
+      "category": "art/maps",
+      "file": "art/maps/ch03_dream_camp_map.png",
+      "variants": {},
+      "scene_ids": [
+        "ch03.dream_camp",
+        "ch03.camp_s17"
+      ],
+      "presentation": {
+        "mode": "evidence",
+        "frame": "occult",
+        "wrap_desktop": "none",
+        "zoomable": true,
+        "case_file_eligible": true
+      },
+      "visibility": "shared",
+      "notes": "Dream Camp / Camp S-17 map.",
+      "dimensions": {
+        "width": 834,
+        "height": 1058
+      }
+    },
+    {
+      "id": "ch03_colonel_nikitin_collage",
+      "source": {
+        "document": "KULT: Divinity Lost - The Black Madonna",
+        "pdf_page": 78,
+        "book_page": 74,
+        "embedded_image_index": 1,
+        "original_file": "p078_i01_b3f2a7d297.jpeg"
+      },
+      "category": "art/scenes",
+      "file": "art/scenes/ch03_colonel_nikitin_collage.webp",
+      "variants": {},
+      "scene_ids": [
+        "ch03.colonel_nikitin",
+        "ch03.dream_camp.capture"
+      ],
+      "presentation": {
+        "mode": "portrait",
+        "frame": "occult",
+        "wrap_desktop": "left",
+        "zoomable": false,
+        "case_file_eligible": false
+      },
+      "visibility": "shared",
+      "notes": "Colonel Nikitin / Dream Camp collage.",
+      "dimensions": {
+        "width": 348,
+        "height": 607
+      }
+    },
+    {
+      "id": "ch04_germanische_gemeinschaft_first_floor_map",
+      "source": {
+        "document": "KULT: Divinity Lost - The Black Madonna",
+        "pdf_page": 93,
+        "book_page": 89,
+        "embedded_image_index": 1,
+        "original_file": "p093_i01_631e8989b7.png"
+      },
+      "category": "art/maps",
+      "file": "art/maps/ch04_germanische_gemeinschaft_first_floor_map.png",
+      "variants": {},
+      "scene_ids": [
+        "ch04.germanische_gemeinschaft.infiltration"
+      ],
+      "presentation": {
+        "mode": "evidence",
+        "frame": "dossier",
+        "wrap_desktop": "none",
+        "zoomable": true,
+        "case_file_eligible": true
+      },
+      "visibility": "shared",
+      "notes": "Germanische Gemeinschaft first-floor plan.",
+      "dimensions": {
+        "width": 819,
+        "height": 487
+      }
+    },
+    {
+      "id": "ch04_germanische_gemeinschaft_second_floor_map",
+      "source": {
+        "document": "KULT: Divinity Lost - The Black Madonna",
+        "pdf_page": 94,
+        "book_page": 90,
+        "embedded_image_index": 1,
+        "original_file": "p094_i01_25ae3ec7c4.png"
+      },
+      "category": "art/maps",
+      "file": "art/maps/ch04_germanische_gemeinschaft_second_floor_map.png",
+      "variants": {},
+      "scene_ids": [
+        "ch04.germanische_gemeinschaft.infiltration"
+      ],
+      "presentation": {
+        "mode": "evidence",
+        "frame": "dossier",
+        "wrap_desktop": "none",
+        "zoomable": true,
+        "case_file_eligible": true
+      },
+      "visibility": "shared",
+      "notes": "Germanische Gemeinschaft second-floor plan.",
+      "dimensions": {
+        "width": 819,
+        "height": 480
+      }
+    },
+    {
+      "id": "ch04_toxic_cafe_map",
+      "source": {
+        "document": "KULT: Divinity Lost - The Black Madonna",
+        "pdf_page": 100,
+        "book_page": 96,
+        "embedded_image_index": 1,
+        "original_file": "p100_i01_03433e0f9b.png"
+      },
+      "category": "art/maps",
+      "file": "art/maps/ch04_toxic_cafe_map.png",
+      "variants": {},
+      "scene_ids": [
+        "ch04.toxic_cafe.recon",
+        "ch04.toxic_cafe.operation"
+      ],
+      "presentation": {
+        "mode": "evidence",
+        "frame": "dossier",
+        "wrap_desktop": "none",
+        "zoomable": true,
+        "case_file_eligible": true
+      },
+      "visibility": "shared",
+      "notes": "Toxic Caf\u00e9 floor plan.",
+      "dimensions": {
+        "width": 892,
+        "height": 860
+      }
+    },
+    {
+      "id": "ch05_selivanova_lictor_collage",
+      "source": {
+        "document": "KULT: Divinity Lost - The Black Madonna",
+        "pdf_page": 105,
+        "book_page": 101,
+        "embedded_image_index": 1,
+        "original_file": "p105_i01_f2eae2f3b3.jpeg"
+      },
+      "category": "art/scenes",
+      "file": "art/scenes/ch05_selivanova_lictor_collage.webp",
+      "variants": {},
+      "scene_ids": [
+        "ch05.selivanova_contact",
+        "ch05.false_identities"
+      ],
+      "presentation": {
+        "mode": "portrait",
+        "frame": "occult",
+        "wrap_desktop": "right",
+        "zoomable": false,
+        "case_file_eligible": false
+      },
+      "visibility": "shared",
+      "notes": "Collage for the KGB lictor / Selivanova contact sequence.",
+      "dimensions": {
+        "width": 348,
+        "height": 607
+      }
+    },
+    {
+      "id": "ch05_slava_headquarters_ground_floor_map",
+      "source": {
+        "document": "KULT: Divinity Lost - The Black Madonna",
+        "pdf_page": 108,
+        "book_page": 104,
+        "embedded_image_index": 1,
+        "original_file": "p108_i01_c2fbe82e91.png"
+      },
+      "category": "art/maps",
+      "file": "art/maps/ch05_slava_headquarters_ground_floor_map.png",
+      "variants": {},
+      "scene_ids": [
+        "ch05.slava_headquarters"
+      ],
+      "presentation": {
+        "mode": "evidence",
+        "frame": "dossier",
+        "wrap_desktop": "none",
+        "zoomable": true,
+        "case_file_eligible": true
+      },
+      "visibility": "shared",
+      "notes": "Slava headquarters ground-floor plan.",
+      "dimensions": {
+        "width": 617,
+        "height": 879
+      }
+    },
+    {
+      "id": "ch05_slava_headquarters_upper_floor_map",
+      "source": {
+        "document": "KULT: Divinity Lost - The Black Madonna",
+        "pdf_page": 109,
+        "book_page": 105,
+        "embedded_image_index": 1,
+        "original_file": "p109_i01_8073f12262.png"
+      },
+      "category": "art/maps",
+      "file": "art/maps/ch05_slava_headquarters_upper_floor_map.png",
+      "variants": {},
+      "scene_ids": [
+        "ch05.slava_headquarters"
+      ],
+      "presentation": {
+        "mode": "evidence",
+        "frame": "dossier",
+        "wrap_desktop": "none",
+        "zoomable": true,
+        "case_file_eligible": true
+      },
+      "visibility": "shared",
+      "notes": "Slava headquarters upper-floor plan.",
+      "dimensions": {
+        "width": 612,
+        "height": 627
+      }
+    },
+    {
+      "id": "ch05_harcombe_residence_map",
+      "source": {
+        "document": "KULT: Divinity Lost - The Black Madonna",
+        "pdf_page": 112,
+        "book_page": 108,
+        "embedded_image_index": 1,
+        "original_file": "p112_i01_8024faac6b.png"
+      },
+      "category": "art/maps",
+      "file": "art/maps/ch05_harcombe_residence_map.png",
+      "variants": {},
+      "scene_ids": [
+        "ch05.harcombe_residence"
+      ],
+      "presentation": {
+        "mode": "evidence",
+        "frame": "dossier",
+        "wrap_desktop": "none",
+        "zoomable": true,
+        "case_file_eligible": true
+      },
+      "visibility": "shared",
+      "notes": "Harcombe residence/factory plan.",
+      "dimensions": {
+        "width": 685,
+        "height": 1127
+      }
+    },
+    {
+      "id": "ch05_air_force_base_f3_map",
+      "source": {
+        "document": "KULT: Divinity Lost - The Black Madonna",
+        "pdf_page": 115,
+        "book_page": 111,
+        "embedded_image_index": 1,
+        "original_file": "p115_i01_517fd7ae62.png"
+      },
+      "category": "art/maps",
+      "file": "art/maps/ch05_air_force_base_f3_map.png",
+      "variants": {},
+      "scene_ids": [
+        "ch05.f3.infiltration",
+        "ch05.f3.escape"
+      ],
+      "presentation": {
+        "mode": "evidence",
+        "frame": "dossier",
+        "wrap_desktop": "none",
+        "zoomable": true,
+        "case_file_eligible": true
+      },
+      "visibility": "shared",
+      "notes": "Air Force Base F3 map.",
+      "dimensions": {
+        "width": 801,
+        "height": 1249
+      }
+    },
+    {
+      "id": "ch05_f3_coup_evidence_collage",
+      "source": {
+        "document": "KULT: Divinity Lost - The Black Madonna",
+        "pdf_page": 119,
+        "book_page": 115,
+        "embedded_image_index": 1,
+        "original_file": "p119_i01_3f51f770ad.jpeg"
+      },
+      "category": "art/scenes",
+      "file": "art/scenes/ch05_f3_coup_evidence_collage.webp",
+      "variants": {},
+      "scene_ids": [
+        "ch05.f3.evidence",
+        "ch05.coup_revelation"
+      ],
+      "presentation": {
+        "mode": "portrait",
+        "frame": "story",
+        "wrap_desktop": "left",
+        "zoomable": false,
+        "case_file_eligible": false
+      },
+      "visibility": "shared",
+      "notes": "Collage associated with F3 evidence and coup material.",
+      "dimensions": {
+        "width": 348,
+        "height": 607
+      }
+    },
+    {
+      "id": "ch05_m13_level_6_map",
+      "source": {
+        "document": "KULT: Divinity Lost - The Black Madonna",
+        "pdf_page": 121,
+        "book_page": 117,
+        "embedded_image_index": 1,
+        "original_file": "p121_i01_2fb8f2cbca.png"
+      },
+      "category": "art/maps",
+      "file": "art/maps/ch05_m13_level_6_map.png",
+      "variants": {},
+      "scene_ids": [
+        "ch05.m13.infiltration"
+      ],
+      "presentation": {
+        "mode": "evidence",
+        "frame": "dossier",
+        "wrap_desktop": "none",
+        "zoomable": true,
+        "case_file_eligible": true
+      },
+      "visibility": "shared",
+      "notes": "Missile Base M13 sixth-level plan.",
+      "dimensions": {
+        "width": 605,
+        "height": 757
+      }
+    },
+    {
+      "id": "ch05_m13_level_5_map",
+      "source": {
+        "document": "KULT: Divinity Lost - The Black Madonna",
+        "pdf_page": 122,
+        "book_page": 118,
+        "embedded_image_index": 1,
+        "original_file": "p122_i01_5547fdb51e.png"
+      },
+      "category": "art/maps",
+      "file": "art/maps/ch05_m13_level_5_map.png",
+      "variants": {},
+      "scene_ids": [
+        "ch05.m13.infiltration"
+      ],
+      "presentation": {
+        "mode": "evidence",
+        "frame": "dossier",
+        "wrap_desktop": "none",
+        "zoomable": true,
+        "case_file_eligible": true
+      },
+      "visibility": "shared",
+      "notes": "Missile Base M13 fifth-level plan.",
+      "dimensions": {
+        "width": 549,
+        "height": 458
+      }
+    },
+    {
+      "id": "ch05_m13_level_4_map",
+      "source": {
+        "document": "KULT: Divinity Lost - The Black Madonna",
+        "pdf_page": 123,
+        "book_page": 119,
+        "embedded_image_index": 1,
+        "original_file": "p123_i01_2008dbb29c.png"
+      },
+      "category": "art/maps",
+      "file": "art/maps/ch05_m13_level_4_map.png",
+      "variants": {},
+      "scene_ids": [
+        "ch05.m13.infiltration"
+      ],
+      "presentation": {
+        "mode": "evidence",
+        "frame": "dossier",
+        "wrap_desktop": "none",
+        "zoomable": true,
+        "case_file_eligible": true
+      },
+      "visibility": "shared",
+      "notes": "Missile Base M13 fourth-level plan.",
+      "dimensions": {
+        "width": 418,
+        "height": 688
+      }
+    },
+    {
+      "id": "ch05_m13_level_3_map",
+      "source": {
+        "document": "KULT: Divinity Lost - The Black Madonna",
+        "pdf_page": 124,
+        "book_page": 120,
+        "embedded_image_index": 1,
+        "original_file": "p124_i01_e55e0dde61.png"
+      },
+      "category": "art/maps",
+      "file": "art/maps/ch05_m13_level_3_map.png",
+      "variants": {},
+      "scene_ids": [
+        "ch05.m13.control_room",
+        "ch05.m13.strelkov"
+      ],
+      "presentation": {
+        "mode": "evidence",
+        "frame": "dossier",
+        "wrap_desktop": "none",
+        "zoomable": true,
+        "case_file_eligible": true
+      },
+      "visibility": "shared",
+      "notes": "Missile Base M13 third-level/control-room plan.",
+      "dimensions": {
+        "width": 438,
+        "height": 452
+      }
+    },
+    {
+      "id": "ch05_m13_strelkov_collage",
+      "source": {
+        "document": "KULT: Divinity Lost - The Black Madonna",
+        "pdf_page": 124,
+        "book_page": 120,
+        "embedded_image_index": 2,
+        "original_file": "p124_i02_cb54e1d694.jpeg"
+      },
+      "category": "art/scenes",
+      "file": "art/scenes/ch05_m13_strelkov_collage.webp",
+      "variants": {},
+      "scene_ids": [
+        "ch05.m13.strelkov",
+        "ch05.m13.control_room"
+      ],
+      "presentation": {
+        "mode": "portrait",
+        "frame": "occult",
+        "wrap_desktop": "right",
+        "zoomable": false,
+        "case_file_eligible": false
+      },
+      "visibility": "shared",
+      "notes": "Infernal/Strelkov collage from M13 third level.",
+      "dimensions": {
+        "width": 348,
+        "height": 607
+      }
+    },
+    {
+      "id": "ch05_m13_level_2_map",
+      "source": {
+        "document": "KULT: Divinity Lost - The Black Madonna",
+        "pdf_page": 125,
+        "book_page": 121,
+        "embedded_image_index": 1,
+        "original_file": "p125_i01_93ea8a0aaf.png"
+      },
+      "category": "art/maps",
+      "file": "art/maps/ch05_m13_level_2_map.png",
+      "variants": {},
+      "scene_ids": [
+        "ch05.m13.infiltration"
+      ],
+      "presentation": {
+        "mode": "evidence",
+        "frame": "dossier",
+        "wrap_desktop": "none",
+        "zoomable": true,
+        "case_file_eligible": true
+      },
+      "visibility": "shared",
+      "notes": "Missile Base M13 second-level plan.",
+      "dimensions": {
+        "width": 526,
+        "height": 386
+      }
+    },
+    {
+      "id": "ch05_m13_level_1_map",
+      "source": {
+        "document": "KULT: Divinity Lost - The Black Madonna",
+        "pdf_page": 126,
+        "book_page": 122,
+        "embedded_image_index": 1,
+        "original_file": "p126_i01_780aac1c2a.png"
+      },
+      "category": "art/maps",
+      "file": "art/maps/ch05_m13_level_1_map.png",
+      "variants": {},
+      "scene_ids": [
+        "ch05.m13.infiltration"
+      ],
+      "presentation": {
+        "mode": "evidence",
+        "frame": "dossier",
+        "wrap_desktop": "none",
+        "zoomable": true,
+        "case_file_eligible": true
+      },
+      "visibility": "shared",
+      "notes": "Missile Base M13 first-level plan.",
+      "dimensions": {
+        "width": 522,
+        "height": 437
+      }
+    },
+    {
+      "id": "ch06_black_cathedral_map",
+      "source": {
+        "document": "KULT: Divinity Lost - The Black Madonna",
+        "pdf_page": 131,
+        "book_page": 127,
+        "embedded_image_index": 1,
+        "original_file": "p131_i01_1fe840c91d.png"
+      },
+      "category": "art/maps",
+      "file": "art/maps/ch06_black_cathedral_map.png",
+      "variants": {},
+      "scene_ids": [
+        "ch06.black_cathedral"
+      ],
+      "presentation": {
+        "mode": "evidence",
+        "frame": "occult",
+        "wrap_desktop": "none",
+        "zoomable": true,
+        "case_file_eligible": true
+      },
+      "visibility": "shared",
+      "notes": "Black Cathedral floor plan.",
+      "dimensions": {
+        "width": 783,
+        "height": 938
+      }
+    },
+    {
+      "id": "ch06_black_cathedral_crypts_map",
+      "source": {
+        "document": "KULT: Divinity Lost - The Black Madonna",
+        "pdf_page": 132,
+        "book_page": 128,
+        "embedded_image_index": 1,
+        "original_file": "p132_i01_f7eae612fd.png"
+      },
+      "category": "art/maps",
+      "file": "art/maps/ch06_black_cathedral_crypts_map.png",
+      "variants": {},
+      "scene_ids": [
+        "ch06.black_cathedral.crypts",
+        "ch06.black_madonna_statue"
+      ],
+      "presentation": {
+        "mode": "evidence",
+        "frame": "occult",
+        "wrap_desktop": "none",
+        "zoomable": true,
+        "case_file_eligible": true
+      },
+      "visibility": "shared",
+      "notes": "Black Cathedral crypts plan.",
+      "dimensions": {
+        "width": 518,
+        "height": 533
+      }
+    },
+    {
+      "id": "ch06_kalenko_house_ground_floor_map",
+      "source": {
+        "document": "KULT: Divinity Lost - The Black Madonna",
+        "pdf_page": 135,
+        "book_page": 131,
+        "embedded_image_index": 1,
+        "original_file": "p135_i01_57514bbd9a.png"
+      },
+      "category": "art/maps",
+      "file": "art/maps/ch06_kalenko_house_ground_floor_map.png",
+      "variants": {},
+      "scene_ids": [
+        "ch06.kalenko_house",
+        "ch06.children_rescue"
+      ],
+      "presentation": {
+        "mode": "evidence",
+        "frame": "occult",
+        "wrap_desktop": "none",
+        "zoomable": true,
+        "case_file_eligible": true
+      },
+      "visibility": "shared",
+      "notes": "Kalenko House ground-floor plan.",
+      "dimensions": {
+        "width": 650,
+        "height": 730
+      }
+    },
+    {
+      "id": "ch06_kalenko_house_basement_map",
+      "source": {
+        "document": "KULT: Divinity Lost - The Black Madonna",
+        "pdf_page": 136,
+        "book_page": 132,
+        "embedded_image_index": 1,
+        "original_file": "p136_i01_4a606e238e.png"
+      },
+      "category": "art/maps",
+      "file": "art/maps/ch06_kalenko_house_basement_map.png",
+      "variants": {},
+      "scene_ids": [
+        "ch06.kalenko_house.basement",
+        "ch06.inferno_threshold"
+      ],
+      "presentation": {
+        "mode": "evidence",
+        "frame": "occult",
+        "wrap_desktop": "none",
+        "zoomable": true,
+        "case_file_eligible": true
+      },
+      "visibility": "shared",
+      "notes": "Kalenko House basement plan.",
+      "dimensions": {
+        "width": 477,
+        "height": 432
+      }
+    },
+    {
+      "id": "ch06_kalenko_house_upper_floor_map",
+      "source": {
+        "document": "KULT: Divinity Lost - The Black Madonna",
+        "pdf_page": 136,
+        "book_page": 132,
+        "embedded_image_index": 2,
+        "original_file": "p136_i02_282831cd9d.png"
+      },
+      "category": "art/maps",
+      "file": "art/maps/ch06_kalenko_house_upper_floor_map.png",
+      "variants": {},
+      "scene_ids": [
+        "ch06.kalenko_house",
+        "ch06.children_rescue"
+      ],
+      "presentation": {
+        "mode": "evidence",
+        "frame": "occult",
+        "wrap_desktop": "none",
+        "zoomable": true,
+        "case_file_eligible": true
+      },
+      "visibility": "shared",
+      "notes": "Kalenko House upper-floor plan.",
+      "dimensions": {
+        "width": 653,
+        "height": 715
+      }
+    },
+    {
+      "id": "ch06_battle_of_incarnates_collage",
+      "source": {
+        "document": "KULT: Divinity Lost - The Black Madonna",
+        "pdf_page": 137,
+        "book_page": 133,
+        "embedded_image_index": 1,
+        "original_file": "p137_i01_3db5346728.jpeg"
+      },
+      "category": "art/scenes",
+      "file": "art/scenes/ch06_battle_of_incarnates_collage.webp",
+      "variants": {},
+      "scene_ids": [
+        "ch06.battle_of_incarnates",
+        "ch06.children_freed"
+      ],
+      "presentation": {
+        "mode": "portrait",
+        "frame": "occult",
+        "wrap_desktop": "right",
+        "zoomable": false,
+        "case_file_eligible": false
+      },
+      "visibility": "shared",
+      "notes": "Final confrontation / Battle of the Incarnates collage.",
+      "dimensions": {
+        "width": 348,
+        "height": 607
+      }
+    },
+    {
+      "id": "ch06_epilogue_collage",
+      "source": {
+        "document": "KULT: Divinity Lost - The Black Madonna",
+        "pdf_page": 138,
+        "book_page": 134,
+        "embedded_image_index": 1,
+        "original_file": "p138_i01_7184a5ad1c.jpeg"
+      },
+      "category": "art/scenes",
+      "file": "art/scenes/ch06_epilogue_collage.webp",
+      "variants": {},
+      "scene_ids": [
+        "ch06.calm_after_storm",
+        "ch06.epilogue"
+      ],
+      "presentation": {
+        "mode": "portrait",
+        "frame": "story",
+        "wrap_desktop": "left",
+        "zoomable": false,
+        "case_file_eligible": false
+      },
+      "visibility": "shared",
+      "notes": "Calm-after-the-storm / epilogue collage.",
+      "dimensions": {
+        "width": 348,
+        "height": 607
+      }
+    },
+    {
+      "id": "kult_ornate_frame_alt",
+      "source": {
+        "document": "KULT: Divinity Lost - The Black Madonna",
+        "pdf_page": 138,
+        "book_page": 134,
+        "embedded_image_index": 2,
+        "original_file": "p138_i02_fb6061b9f4.png"
+      },
+      "category": "ui/frames",
+      "file": "ui/frames/kult_ornate_frame_alt_bone.png",
+      "variants": {
+        "bone": "ui/frames/kult_ornate_frame_alt_bone.png",
+        "red": "ui/frames/kult_ornate_frame_alt_red.png",
+        "white": "ui/frames/kult_ornate_frame_alt_white.png"
+      },
+      "scene_ids": [
+        "ui.portrait_frame_alt"
+      ],
+      "presentation": {
+        "mode": "frame",
+        "frame": "none",
+        "wrap_desktop": "none",
+        "zoomable": false,
+        "case_file_eligible": false
+      },
+      "visibility": "shared",
+      "notes": "Alternate extracted frame mask.",
+      "dimensions": {
+        "width": 1483,
+        "height": 2514
+      }
+    },
+    {
+      "id": "kult_winged_emblem_alt",
+      "source": {
+        "document": "KULT: Divinity Lost - The Black Madonna",
+        "pdf_page": 176,
+        "book_page": 172,
+        "embedded_image_index": 1,
+        "original_file": "p176_i01_2ba23fed26.png"
+      },
+      "category": "ui/motifs",
+      "file": "ui/motifs/kult_winged_emblem_alt_bone.png",
+      "variants": {
+        "bone": "ui/motifs/kult_winged_emblem_alt_bone.png",
+        "red": "ui/motifs/kult_winged_emblem_alt_red.png",
+        "white": "ui/motifs/kult_winged_emblem_alt_white.png"
+      },
+      "scene_ids": [
+        "ui.loading",
+        "ui.end_card"
+      ],
+      "presentation": {
+        "mode": "symbol",
+        "frame": "none",
+        "wrap_desktop": "none",
+        "zoomable": false,
+        "case_file_eligible": false
+      },
+      "visibility": "shared",
+      "notes": "Alternate winged emblem from campaign back matter.",
+      "dimensions": {
+        "width": 1061,
+        "height": 799
+      }
+    }
+  ]
+}

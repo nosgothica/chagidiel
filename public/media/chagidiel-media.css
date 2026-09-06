@@ -1,0 +1,24 @@
+
+:root {
+  --ch-void:#050505; --ch-soot:#0d0c0b; --ch-charcoal:#171513;
+  --ch-bone:#d4cab1; --ch-ash:#827b70; --ch-red:#851b1b; --ch-blood:#4d1111;
+}
+.ch-media { margin:1.35rem 0; color:var(--ch-bone); }
+.ch-media__frame { position:relative; background:#090807; border:1px solid rgba(212,202,177,.38); padding:8px; box-shadow:0 14px 34px rgba(0,0,0,.55), inset 0 0 0 1px rgba(133,27,27,.12); }
+.ch-media__frame::before,.ch-media__frame::after { content:""; position:absolute; width:22px; height:22px; pointer-events:none; opacity:.75; }
+.ch-media__frame::before { left:-4px; top:-4px; border-left:1px solid var(--ch-red); border-top:1px solid var(--ch-red); }
+.ch-media__frame::after { right:-4px; bottom:-4px; border-right:1px solid var(--ch-red); border-bottom:1px solid var(--ch-red); }
+.ch-media img { width:100%; height:auto; display:block; background:#0a0908; }
+.ch-media--story .ch-media__frame { border-color:rgba(212,202,177,.34); }
+.ch-media--occult .ch-media__frame { border-color:rgba(133,27,27,.62); box-shadow:0 16px 42px rgba(0,0,0,.65),0 0 24px rgba(100,10,10,.13); }
+.ch-media--dossier .ch-media__frame { background:#bdb39d; border-color:#3b342d; padding:10px; transform:rotate(-.15deg); }
+.ch-media--dossier img { background:#d8d0bc; }
+.ch-media__caption { margin-top:.55rem; font:600 .68rem/1.35 ui-monospace,SFMono-Regular,Menlo,monospace; letter-spacing:.12em; text-transform:uppercase; color:var(--ch-ash); }
+@media (min-width:900px) {
+  .ch-media--wrap-left,.ch-media--wrap-right { width:min(36%,360px); margin-top:.35rem; margin-bottom:1rem; }
+  .ch-media--wrap-left { float:left; margin-right:1.4rem; }
+  .ch-media--wrap-right { float:right; margin-left:1.4rem; }
+  .ch-media--hero { width:min(100%,920px); margin:1.65rem auto; }
+}
+@media (max-width:899px) { .ch-media--wrap-left,.ch-media--wrap-right { float:none; width:100%; margin:1.15rem 0; } }
+.ch-media-clear::after { content:""; display:block; clear:both; }

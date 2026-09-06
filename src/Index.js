@@ -164,28 +164,117 @@ function bearer(request, url) {
 function normalizeContact(method, value) {
   const raw = String(value || '').trim();
   if (method === 'email') return raw.toLowerCase();
-  return raw.replace(/[^0-9+]/g, '');
+  const digits = raw.replace(/\D/g, '');
+  if (!digits) return '';
+  if (raw.startsWith('+') && digits.length >= 8 && digits.length <= 15) return `+${digits}`;
+  if (digits.length === 10) return `+1${digits}`;
+  if (digits.length === 11 && digits.startsWith('1')) return `+${digits}`;
+  if (digits.length >= 11 && digits.length <= 15) return `+${digits}`;
+  return '';
+}
+function validEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || ''));
+}
+function validPhone(value) {
+  return /^\+[1-9]\d{7,14}$/.test(String(value || ''));
 }
 async function userIdFor(method, contact) {
   const digest = await sha(`${method}:${contact}`);
   return 'u_' + base64url(digest.slice(0, 12));
 }
-
-async function sendEmail(env, to, code, purpose = 'login') {
-  if (!env.RESEND_API_KEY || !env.RESEND_FROM) return false;
-  const r = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: { authorization: `Bearer ${env.RESEND_API_KEY}`, 'content-type': 'application/json' },
-    body: JSON.stringify({ from: env.RESEND_FROM, to: [to], subject: purpose === 'login' ? 'Your Chagidiel login code' : 'Chagidiel - your protagonist is needed', html: purpose === 'login' ? `<p>Your Chagidiel code is <strong>${code}</strong>.</p>` : `<p>${code}</p>` }),
-  });
-  return r.ok;
+async function providerJson(response) {
+  const text = await response.text();
+  if (!text) return {};
+  try { return JSON.parse(text); } catch (_) { return { message: text.slice(0, 500) }; }
 }
-async function sendSms(env, to, body) {
-  if (!env.TWILIO_ACCOUNT_SID || !env.TWILIO_AUTH_TOKEN || !env.TWILIO_FROM) return false;
+function providerError(provider, response, data) {
+  const raw = data?.message || data?.error?.message || data?.error || data?.detail || data?.code || `HTTP ${response.status}`;
+  return `${provider}: ${String(raw).slice(0, 320)}`;
+}
+function twilioBasicAuth(env) {
+  return `Basic ${btoa(`${env.TWILIO_ACCOUNT_SID}:${env.TWILIO_AUTH_TOKEN}`)}`;
+}
+function twilioCoreConfigured(env) {
+  return !!(env.TWILIO_ACCOUNT_SID && env.TWILIO_AUTH_TOKEN);
+}
+function twilioVerifyConfigured(env) {
+  return !!(twilioCoreConfigured(env) && env.TWILIO_VERIFY_SERVICE_SID);
+}
+function twilioMessagingConfigured(env) {
+  return !!(twilioCoreConfigured(env) && env.TWILIO_FROM);
+}
+
+async function sendEmail(env, to, content, purpose = 'login') {
+  if (!env.RESEND_API_KEY || !env.RESEND_FROM) return { ok: false, configured: false, provider: 'resend', error: 'RESEND_API_KEY and RESEND_FROM are required.' };
+  const isLogin = purpose === 'login';
+  const subject = isLogin ? 'Your Chagidiel login code' : 'Chagidiel - your protagonist is needed';
+  const text = isLogin ? `Your Chagidiel login code is ${content}. It expires in 10 minutes.` : String(content);
+  const html = isLogin
+    ? `<div style="background:#090807;color:#d8d0bc;padding:28px;font-family:Georgia,serif"><div style="color:#8f1f22;letter-spacing:.18em;text-transform:uppercase;font-size:12px">Chagidiel</div><h1 style="font-weight:400">Your login code</h1><p>Enter this six-digit code to continue:</p><div style="font-size:32px;letter-spacing:.22em;color:#fff;margin:24px 0">${content}</div><p style="color:#9c9588">This code expires in 10 minutes. If you did not request it, you can ignore this message.</p></div>`
+    : `<div style="background:#090807;color:#d8d0bc;padding:28px;font-family:Georgia,serif"><div style="color:#8f1f22;letter-spacing:.18em;text-transform:uppercase;font-size:12px">Chagidiel</div><p>${String(content).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}</p></div>`;
+  try {
+    const r = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${env.RESEND_API_KEY}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ from: env.RESEND_FROM, to: [to], subject, html, text }),
+    });
+    const data = await providerJson(r);
+    if (!r.ok) return { ok: false, configured: true, provider: 'resend', status: r.status, error: providerError('Resend', r, data) };
+    return { ok: true, configured: true, provider: 'resend', id: data?.id || null };
+  } catch (e) {
+    return { ok: false, configured: true, provider: 'resend', error: `Resend network error: ${String(e?.message || e)}` };
+  }
+}
+
+async function sendSmsMessage(env, to, body) {
+  if (!twilioMessagingConfigured(env)) return { ok: false, configured: false, provider: 'twilio_messages', error: 'TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_FROM are required for SMS alerts.' };
   const form = new URLSearchParams({ To: to, From: env.TWILIO_FROM, Body: body });
-  const auth = btoa(`${env.TWILIO_ACCOUNT_SID}:${env.TWILIO_AUTH_TOKEN}`);
-  const r = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${encodeURIComponent(env.TWILIO_ACCOUNT_SID)}/Messages.json`, { method: 'POST', headers: { authorization: `Basic ${auth}`, 'content-type': 'application/x-www-form-urlencoded' }, body: form });
-  return r.ok;
+  try {
+    const r = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${encodeURIComponent(env.TWILIO_ACCOUNT_SID)}/Messages.json`, {
+      method: 'POST',
+      headers: { authorization: twilioBasicAuth(env), 'content-type': 'application/x-www-form-urlencoded' },
+      body: form,
+    });
+    const data = await providerJson(r);
+    if (!r.ok) return { ok: false, configured: true, provider: 'twilio_messages', status: r.status, error: providerError('Twilio Messages', r, data) };
+    return { ok: true, configured: true, provider: 'twilio_messages', id: data?.sid || null };
+  } catch (e) {
+    return { ok: false, configured: true, provider: 'twilio_messages', error: `Twilio network error: ${String(e?.message || e)}` };
+  }
+}
+
+async function startTwilioVerification(env, to) {
+  if (!twilioVerifyConfigured(env)) return { ok: false, configured: false, provider: 'twilio_verify', error: 'TWILIO_VERIFY_SERVICE_SID is not configured.' };
+  const form = new URLSearchParams({ To: to, Channel: 'sms' });
+  try {
+    const r = await fetch(`https://verify.twilio.com/v2/Services/${encodeURIComponent(env.TWILIO_VERIFY_SERVICE_SID)}/Verifications`, {
+      method: 'POST',
+      headers: { authorization: twilioBasicAuth(env), 'content-type': 'application/x-www-form-urlencoded' },
+      body: form,
+    });
+    const data = await providerJson(r);
+    if (!r.ok) return { ok: false, configured: true, provider: 'twilio_verify', status: r.status, error: providerError('Twilio Verify', r, data) };
+    return { ok: data?.status === 'pending' || !!data?.sid, configured: true, provider: 'twilio_verify', status: data?.status || 'pending', id: data?.sid || null };
+  } catch (e) {
+    return { ok: false, configured: true, provider: 'twilio_verify', error: `Twilio Verify network error: ${String(e?.message || e)}` };
+  }
+}
+
+async function checkTwilioVerification(env, to, code) {
+  if (!twilioVerifyConfigured(env)) return { ok: false, configured: false, provider: 'twilio_verify', error: 'TWILIO_VERIFY_SERVICE_SID is not configured.' };
+  const form = new URLSearchParams({ To: to, Code: code });
+  try {
+    const r = await fetch(`https://verify.twilio.com/v2/Services/${encodeURIComponent(env.TWILIO_VERIFY_SERVICE_SID)}/VerificationCheck`, {
+      method: 'POST',
+      headers: { authorization: twilioBasicAuth(env), 'content-type': 'application/x-www-form-urlencoded' },
+      body: form,
+    });
+    const data = await providerJson(r);
+    if (!r.ok) return { ok: false, configured: true, provider: 'twilio_verify', status: r.status, error: providerError('Twilio Verify', r, data) };
+    return { ok: data?.status === 'approved', configured: true, provider: 'twilio_verify', status: data?.status || 'pending' };
+  } catch (e) {
+    return { ok: false, configured: true, provider: 'twilio_verify', error: `Twilio Verify network error: ${String(e?.message || e)}` };
+  }
 }
 
 function outcome(total) { return total >= 15 ? 'complete' : total >= 10 ? 'complication' : 'failure'; }
@@ -397,8 +486,8 @@ function publicView(c, uid, online = {}) {
 
 async function safeNotify(env, player, message) {
   if (!player?.contact) return false;
-  if (player.method === 'sms') return sendSms(env, player.contact, `Chagidiel: ${message}`);
-  if (player.method === 'email') return sendEmail(env, player.contact, message, 'alert');
+  if (player.method === 'sms') return (await sendSmsMessage(env, player.contact, `Chagidiel: ${message}`)).ok;
+  if (player.method === 'email') return (await sendEmail(env, player.contact, message, 'alert')).ok;
   return false;
 }
 
@@ -407,32 +496,98 @@ export class AuthRoom {
   async fetch(request) {
     const url = new URL(request.url);
     if (url.pathname === '/request') {
-      const body = await request.json();
+      let body;
+      try { body = await request.json(); } catch (_) { return json({ error: 'Invalid request.' }, 400); }
       const method = body.method === 'sms' ? 'sms' : 'email';
       const contact = normalizeContact(method, body.value);
-      if (!contact || (method === 'email' && !contact.includes('@')) || (method === 'sms' && contact.length < 8)) return json({ error: 'Enter a valid email address or phone number.' }, 400);
-      const code = randomCode();
-      const hash = base64url(await sha(code));
-      await this.state.storage.put(`otp:${method}:${contact}`, { hash, exp: Date.now() + 10 * 60 * 1000, attempts: 0 });
-      let sent = false;
-      if (method === 'sms') sent = await sendSms(this.env, contact, `Your Chagidiel login code is ${code}. It expires in 10 minutes.`);
-      else sent = await sendEmail(this.env, contact, code, 'login');
-      const out = { ok: true, sent };
-      if (!sent && String(this.env.DEV_OTP || '').toLowerCase() === 'true') out.devCode = code;
-      if (!sent && !out.devCode) out.warning = 'No email/SMS provider is configured on this Worker.';
-      return json(out);
+      if (!contact || (method === 'email' && !validEmail(contact)) || (method === 'sms' && !validPhone(contact))) {
+        return json({ error: method === 'sms' ? 'Enter a valid mobile number. US 10-digit numbers are accepted; international numbers should include the country code.' : 'Enter a valid email address.' }, 400);
+      }
+
+      const rateKey = `otp-rate:${method}:${contact}`;
+      const now = Date.now();
+      const rate = await this.state.storage.get(rateKey) || { window: now, count: 0, last: 0 };
+      if (now - Number(rate.last || 0) < 45_000) return json({ error: 'Please wait about a minute before requesting another code.', retryAfter: 45 }, 429);
+      if (now - Number(rate.window || now) >= 60 * 60 * 1000) { rate.window = now; rate.count = 0; }
+      if (Number(rate.count || 0) >= 6) return json({ error: 'Too many verification requests for this address. Try again later.' }, 429);
+
+      const devOtp = String(this.env.DEV_OTP || '').toLowerCase() === 'true';
+      let result;
+      let code = null;
+      let providerMode = 'local';
+
+      if (method === 'sms' && twilioVerifyConfigured(this.env)) {
+        result = await startTwilioVerification(this.env, contact);
+        providerMode = 'twilio_verify';
+        if (result.ok) {
+          await this.state.storage.put(`otp-meta:${method}:${contact}`, { provider: providerMode, exp: now + 10 * 60 * 1000 });
+        }
+      } else {
+        code = randomCode();
+        const hash = base64url(await sha(code));
+        await this.state.storage.put(`otp:${method}:${contact}`, { hash, exp: now + 10 * 60 * 1000, attempts: 0 });
+        if (method === 'sms') {
+          result = await sendSmsMessage(this.env, contact, `Your Chagidiel login code is ${code}. It expires in 10 minutes.`);
+          providerMode = 'twilio_messages';
+        } else {
+          result = await sendEmail(this.env, contact, code, 'login');
+          providerMode = 'resend';
+        }
+      }
+
+      if (result?.ok) {
+        rate.count = Number(rate.count || 0) + 1; rate.last = now;
+        await this.state.storage.put(rateKey, rate);
+        return json({ ok: true, sent: true, provider: providerMode });
+      }
+
+      if (devOtp) {
+        if (!code) {
+          code = randomCode();
+          const hash = base64url(await sha(code));
+          await this.state.storage.put(`otp:${method}:${contact}`, { hash, exp: now + 10 * 60 * 1000, attempts: 0 });
+          await this.state.storage.put(`otp-meta:${method}:${contact}`, { provider: 'local', exp: now + 10 * 60 * 1000 });
+        }
+        rate.count = Number(rate.count || 0) + 1; rate.last = now;
+        await this.state.storage.put(rateKey, rate);
+        return json({ ok: true, sent: false, provider: providerMode, devCode: code, warning: result?.error || 'Provider delivery failed; using development code.' });
+      }
+
+      await this.state.storage.delete(`otp:${method}:${contact}`);
+      await this.state.storage.delete(`otp-meta:${method}:${contact}`);
+      const status = result?.configured === false ? 503 : 502;
+      return json({ error: result?.configured === false ? `${method === 'sms' ? 'SMS' : 'Email'} login is not configured yet.` : `The ${method === 'sms' ? 'SMS' : 'email'} provider rejected the verification request.`, detail: result?.error || 'Unknown provider error.', provider: providerMode }, status);
     }
+
     if (url.pathname === '/verify') {
-      const body = await request.json();
+      let body;
+      try { body = await request.json(); } catch (_) { return json({ error: 'Invalid request.' }, 400); }
       const method = body.method === 'sms' ? 'sms' : 'email';
       const contact = normalizeContact(method, body.value);
-      const key = `otp:${method}:${contact}`;
-      const rec = await this.state.storage.get(key);
-      if (!rec || rec.exp < Date.now()) return json({ error: 'That code has expired.' }, 400);
-      if (rec.attempts >= 6) return json({ error: 'Too many attempts. Request another code.' }, 429);
-      const hash = base64url(await sha(String(body.code || '').trim()));
-      if (hash !== rec.hash) { rec.attempts++; await this.state.storage.put(key, rec); return json({ error: 'Incorrect code.' }, 400); }
-      await this.state.storage.delete(key);
+      const code = String(body.code || '').trim();
+      if (!/^\d{4,10}$/.test(code)) return json({ error: 'Enter the verification code you received.' }, 400);
+
+      const metaKey = `otp-meta:${method}:${contact}`;
+      const meta = await this.state.storage.get(metaKey);
+      if (method === 'sms' && meta?.provider === 'twilio_verify') {
+        if (meta.exp < Date.now()) return json({ error: 'That code has expired. Request another code.' }, 400);
+        const checked = await checkTwilioVerification(this.env, contact, code);
+        if (!checked.ok) {
+          if (checked.configured && checked.status && checked.status !== 'approved') return json({ error: 'Incorrect or expired code.' }, 400);
+          return json({ error: 'SMS verification could not be checked.', detail: checked.error || 'Twilio Verify error.' }, checked.configured === false ? 503 : 502);
+        }
+        await this.state.storage.delete(metaKey);
+      } else {
+        const key = `otp:${method}:${contact}`;
+        const rec = await this.state.storage.get(key);
+        if (!rec || rec.exp < Date.now()) return json({ error: 'That code has expired. Request another code.' }, 400);
+        if (rec.attempts >= 6) return json({ error: 'Too many attempts. Request another code.' }, 429);
+        const hash = base64url(await sha(code));
+        if (hash !== rec.hash) { rec.attempts++; await this.state.storage.put(key, rec); return json({ error: 'Incorrect code.' }, 400); }
+        await this.state.storage.delete(key);
+        await this.state.storage.delete(metaKey);
+      }
+
       const uid = await userIdFor(method, contact);
       const token = await signSession(this.env, { uid, contact, method, exp: Date.now() + 30 * 24 * 60 * 60 * 1000 });
       return json({ ok: true, token, user: { uid, contact, method } });
@@ -597,7 +752,23 @@ async function forwardCampaign(request, env, id, path, user, body = null) {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-    if (url.pathname === '/api/health') return json({ ok:true, build:'chagidiel-beta-1', elevenlabsConfigured:!!env.ELEVENLABS_API_KEY, r2Configured:!!env.NARRATION_AUDIO, authSecretConfigured:!!env.AUTH_SECRET, smsConfigured:!!(env.TWILIO_ACCOUNT_SID&&env.TWILIO_AUTH_TOKEN&&env.TWILIO_FROM), emailConfigured:!!(env.RESEND_API_KEY&&env.RESEND_FROM), webPushConfigured:false },200,{'cache-control':'no-store'});
+    if (url.pathname === '/api/health') {
+      const smsLoginMode = twilioVerifyConfigured(env) ? 'twilio_verify' : (twilioMessagingConfigured(env) ? 'twilio_messages' : null);
+      return json({
+        ok:true, build:'chagidiel-beta-2-auth',
+        elevenlabsConfigured:!!env.ELEVENLABS_API_KEY,
+        r2Configured:!!env.NARRATION_AUDIO,
+        authSecretConfigured:!!env.AUTH_SECRET,
+        emailConfigured:!!(env.RESEND_API_KEY&&env.RESEND_FROM),
+        emailLoginConfigured:!!(env.RESEND_API_KEY&&env.RESEND_FROM),
+        smsConfigured:!!smsLoginMode,
+        smsLoginConfigured:!!smsLoginMode,
+        smsLoginMode,
+        smsAlertsConfigured:twilioMessagingConfigured(env),
+        twilioVerifyServiceConfigured:twilioVerifyConfigured(env),
+        webPushConfigured:false
+      },200,{'cache-control':'no-store'});
+    }
     if (url.pathname === '/api/config') return json({ vapidPublicKey: env.VAPID_PUBLIC_KEY || null, pushDelivery: false });
     if (url.pathname === '/api/auth/request' || url.pathname === '/api/auth/verify') {
       if (request.method !== 'POST') return json({ error: 'Method not allowed.' }, 405);

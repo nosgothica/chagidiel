@@ -289,8 +289,8 @@ async function checkTwilioVerification(env, to, code) {
   }
 }
 
-const PASSWORD_ITERATIONS = 210000;
 const RESET_TTL_MS = 60 * 60 * 1000;
+const PASSWORD_ALGORITHM = 'HMAC-SHA256-PEPPERED-v1';
 
 function validPassword(password) {
   const value = String(password || '');
@@ -302,15 +302,17 @@ function equalBytes(a, b) {
   for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
   return diff === 0;
 }
-async function derivePassword(password, salt = null, iterations = PASSWORD_ITERATIONS) {
+async function derivePassword(env, password, salt = null) {
+  if (!env.AUTH_SECRET) throw new Error('AUTH_SECRET is not configured.');
   const saltBytes = salt ? unbase64url(salt) : crypto.getRandomValues(new Uint8Array(16));
-  const keyMaterial = await crypto.subtle.importKey('raw', new TextEncoder().encode(String(password)), 'PBKDF2', false, ['deriveBits']);
-  const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt: saltBytes, iterations }, keyMaterial, 256);
-  return { algorithm: 'PBKDF2-SHA256', iterations, salt: base64url(saltBytes), hash: base64url(new Uint8Array(bits)) };
+  const saltText = base64url(saltBytes);
+  const digest = await hmac(env.AUTH_SECRET, `chagidiel-password-v1\n${saltText}\n${String(password)}`);
+  return { algorithm: PASSWORD_ALGORITHM, salt: saltText, hash: base64url(digest) };
 }
-async function verifyPassword(password, record) {
-  if (!record?.salt || !record?.hash || !record?.iterations) return false;
-  const candidate = await derivePassword(password, record.salt, Number(record.iterations));
+async function verifyPassword(env, password, record) {
+  if (!record?.salt || !record?.hash) return false;
+  if (record.algorithm !== PASSWORD_ALGORITHM) return false;
+  const candidate = await derivePassword(env, password, record.salt);
   return equalBytes(unbase64url(candidate.hash), unbase64url(record.hash));
 }
 function randomResetToken() {
@@ -581,7 +583,7 @@ export class AuthRoom {
         email,
         role: 'admin',
         disabled: false,
-        password: await derivePassword(password),
+        password: await derivePassword(this.env, password),
         sessionVersion: 1,
         createdAt: Date.now(),
         updatedAt: Date.now(),
@@ -591,7 +593,12 @@ export class AuthRoom {
       changed = true;
     } else {
       if (user.role !== 'admin') { user.role = 'admin'; changed = true; }
-      if (!marker) { user.password = await derivePassword(password); user.passwordChangedAt = Date.now(); user.sessionVersion = Number(user.sessionVersion || 1) + 1; changed = true; }
+      if (!marker || user.password?.algorithm !== PASSWORD_ALGORITHM) {
+        user.password = await derivePassword(this.env, password);
+        user.passwordChangedAt = Date.now();
+        user.sessionVersion = Number(user.sessionVersion || 1) + 1;
+        changed = true;
+      }
       if (!user.sessionVersion) { user.sessionVersion = 1; changed = true; }
       if (user.disabled) { user.disabled = false; changed = true; }
       if (changed) user.updatedAt = Date.now();
@@ -630,7 +637,7 @@ export class AuthRoom {
       const uid = await userIdFor('email', email);
       if (await this.state.storage.get(`user:${uid}`)) return json({ error: 'An account already exists for that email.' }, 409);
       const now = Date.now();
-      const user = { uid, email, role: 'player', disabled: false, password: await derivePassword(password), sessionVersion: 1, createdAt: now, updatedAt: now, passwordChangedAt: now, lastLoginAt: now };
+      const user = { uid, email, role: 'player', disabled: false, password: await derivePassword(this.env, password), sessionVersion: 1, createdAt: now, updatedAt: now, passwordChangedAt: now, lastLoginAt: now };
       await this.state.storage.put(`user:${uid}`, user);
       const token = await signUserSession(this.env, user);
       return json({ ok: true, token, user: publicAccount(user) });
@@ -646,7 +653,8 @@ export class AuthRoom {
       if (!user || user.disabled) return json({ error: 'Invalid email or password.' }, 401);
       const now = Date.now();
       if (user.lockUntil && user.lockUntil > now) return json({ error: 'Too many failed attempts. Try again later.' }, 429);
-      if (!(await verifyPassword(password, user.password))) {
+      if (user.password?.algorithm !== PASSWORD_ALGORITHM) return json({ error: 'This beta account uses an older password format. Request a password reset to upgrade it.' }, 409);
+      if (!(await verifyPassword(this.env, password, user.password))) {
         user.failedLogins = Number(user.failedLogins || 0) + 1;
         if (user.failedLogins >= 8) { user.lockUntil = now + 15 * 60 * 1000; user.failedLogins = 0; }
         user.updatedAt = now;
@@ -696,7 +704,7 @@ export class AuthRoom {
       if (current !== tokenHash) return json({ error: 'That reset link has already been replaced.' }, 400);
       const user = await this.state.storage.get(`user:${rec.uid}`);
       if (!user || user.disabled) return json({ error: 'That reset link is no longer valid.' }, 400);
-      user.password = await derivePassword(password);
+      user.password = await derivePassword(this.env, password);
       user.passwordChangedAt = Date.now();
       user.updatedAt = Date.now();
       user.sessionVersion = Number(user.sessionVersion || 1) + 1;
@@ -934,7 +942,7 @@ export default {
     if (url.pathname === '/api/health') {
       const smsLoginMode = twilioVerifyConfigured(env) ? 'twilio_verify' : (twilioMessagingConfigured(env) ? 'twilio_messages' : null);
       return json({
-        ok:true, build:'chagidiel-beta-3-accounts',
+        ok:true, build:'chagidiel-beta-4-login-fix',
         elevenlabsConfigured:!!env.ELEVENLABS_API_KEY,
         r2Configured:!!env.NARRATION_AUDIO,
         authSecretConfigured:!!env.AUTH_SECRET,

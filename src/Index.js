@@ -26,12 +26,34 @@ const MOVE_MAP = {
 };
 
 const OCCUPATIONS = {
+  stasi: 'Former Stasi Officer',
+  diplomatic: 'Diplomatic Attaché',
+  professor: 'Professor of History',
+  black_marketeer: 'Black Marketeer',
+  legionnaire: 'Foreign Legionnaire',
   journalist: 'Freelance Journalist',
   writer: 'Horror Writer',
   bookseller: 'Rare Book Dealer',
   kgb: 'Defected KGB Operative',
-  agent: 'Literary Agent',
+  literary_agent: 'Literary Agent',
+  agent: 'Literary Agent', // backward-compatible beta key
 };
+const OCCUPATION_DETAILS = {
+  stasi: { archetype: 'The Agent', languages: 'German native; English broken.' },
+  diplomatic: { archetype: 'The Careerist', languages: 'Choose native tongue; German fluent.' },
+  professor: { archetype: 'The Academic', languages: 'German native; Russian fluent; English and Polish broken.' },
+  black_marketeer: { archetype: 'The Fixer', languages: 'German native; Russian, English, Swedish broken.' },
+  legionnaire: { archetype: 'The Veteran', languages: 'Choose native tongue; German and French fluent; English broken.' },
+  journalist: { archetype: 'The Detective', languages: 'German native; English fluent.' },
+  writer: { archetype: 'The Artist', languages: 'German native; English fluent.' },
+  bookseller: { archetype: 'The Occultist', languages: 'German native; English fluent; French, Hebrew, Latin, Greek, Arabic broken.' },
+  kgb: { archetype: 'The Ronin', languages: 'Russian native; German and English fluent.' },
+  literary_agent: { archetype: 'The Deceiver', languages: 'German native; English and French fluent; Russian broken.' },
+  agent: { archetype: 'The Deceiver', languages: 'German native; English and French fluent; Russian broken.' },
+};
+const DARK_SECRETS = new Set(['broken_childhood','mental_illness','secret_past','strange_death','occult_fascination','guilty','addict','flashbacks']);
+const FAMILIES = new Set(['alone','fiance','divorced','accident','casual','joyless','destructive','abusive','happy']);
+const EAST_GERMAN_REGIONS = ['East Berlin / Brandenburg','Saxony / Thuringia','Mecklenburg / Saxony-Anhalt'];
 
 const MAGDA_RELATIONS = {
   journalism: 'Knows Magda through her journalism',
@@ -389,18 +411,78 @@ function seatFor(c, uid) {
   return null;
 }
 function otherSeat(seat) { return seat === 'A' ? 'B' : 'A'; }
+function cleanArrayText(value, maxItems = 4, maxLen = 220) {
+  return Array.isArray(value) ? value.slice(0, maxItems).map(x => String(x || '').slice(0, maxLen)) : [];
+}
+function legalAttributeSpread(attrs) {
+  const passive = ['fortitude','reflexes','willpower'].map(k => Number(attrs[k])).sort((a,b) => b-a);
+  const active = ['charisma','coolness','intuition','perception','reason','soul','violence'].map(k => Number(attrs[k])).sort((a,b) => b-a);
+  return passive.join(',') === '2,1,0' && active.join(',') === '3,2,1,1,0,-1,-2';
+}
 function cleanCharacter(input) {
   const attrs = {};
   const keys = ['fortitude','willpower','reflexes','reason','intuition','perception','coolness','violence','charisma','soul'];
-  for (const k of keys) attrs[k] = Math.max(-2, Math.min(3, Number(input?.attributes?.[k] ?? 0) || 0));
-  return {
-    name: String(input?.name || 'Unnamed').slice(0, 80),
-    occupation: OCCUPATIONS[input?.occupation] ? input.occupation : 'journalist',
-    relation: MAGDA_RELATIONS[input?.relation] ? input.relation : 'friend',
+  for (const k of keys) {
+    const n = Number(input?.attributes?.[k]);
+    if (!Number.isFinite(n) || n < -2 || n > 3) return { error: 'Every starting Attribute must be between -2 and +3.' };
+    attrs[k] = n;
+  }
+  if (!legalAttributeSpread(attrs)) return { error: 'Starting Attributes must use the Black Madonna spreads exactly: Passive +2/+1/+0; Active +3/+2/+1/+1/+0/-1/-2.' };
+  const firstName = String(input?.firstName || '').trim().slice(0, 40);
+  const lastName = String(input?.lastName || '').trim().slice(0, 40);
+  if (!firstName || !lastName) return { error: 'A first and last name are required.' };
+  const occupation = OCCUPATIONS[input?.occupation] ? input.occupation : null;
+  if (!occupation) return { error: 'Choose a valid Black Madonna occupation.' };
+  const relation = MAGDA_RELATIONS[input?.relation] ? input.relation : null;
+  if (!relation) return { error: 'Choose a valid relationship with Magda Orlova.' };
+  const darkSecret = DARK_SECRETS.has(input?.darkSecret) ? input.darkSecret : null;
+  const family = FAMILIES.has(input?.family) ? input.family : null;
+  if (!darkSecret || !family) return { error: 'Choose one campaign Dark Secret and one Family option.' };
+  const origin = input?.origin && typeof input.origin === 'object' ? {
+    country: String(input.origin.country || '').slice(0, 40),
+    countryLabel: String(input.origin.countryLabel || '').slice(0, 80),
+    region: String(input.origin.region || '').slice(0, 120),
+    currentBase: String(input.origin.currentBase || '').slice(0, 80),
+    germanyHistory: String(input.origin.germanyHistory || '').slice(0, 40),
+    germanyHistoryLabel: String(input.origin.germanyHistoryLabel || '').slice(0, 160),
+    germanyReason: String(input.origin.germanyReason || '').slice(0, 40),
+    germanyReasonLabel: String(input.origin.germanyReasonLabel || '').slice(0, 160),
+  } : {};
+  const ageBand = String(input?.ageBand || '').slice(0, 16);
+  if (relation === 'child') {
+    const eastBorn = origin.country === 'germany' && EAST_GERMAN_REGIONS.includes(origin.region);
+    if (ageBand !== '23–29' || !eastBorn) return { error: 'Child of Magda Orlova requires age 23–29 and East German origin.' };
+  }
+  const detail = OCCUPATION_DETAILS[occupation];
+  return { character: {
+    firstName, lastName, name: `${firstName} ${lastName}`.slice(0, 80),
+    namingStyle: String(input?.namingStyle || 'unrestricted').slice(0, 24),
+    origin,
+    ageBand,
+    presentation: String(input?.presentation || '').slice(0, 40),
+    presentationLabel: String(input?.presentationLabel || '').slice(0, 120),
+    occupation,
+    occupationName: OCCUPATIONS[occupation],
+    occupationArchetype: detail.archetype,
+    languages: detail.languages,
+    occupationAnswers: cleanArrayText(input?.occupationAnswers, 2),
+    darkSecret,
+    darkSecretName: String(input?.darkSecretName || '').slice(0, 100),
+    darkSecretAnswers: cleanArrayText(input?.darkSecretAnswers, 2),
+    family,
+    familyName: String(input?.familyName || '').slice(0, 120),
+    familyRelation: String(input?.familyRelation || '').slice(0, 120),
+    familyAnswers: cleanArrayText(input?.familyAnswers, 2),
+    relation,
+    relationName: MAGDA_RELATIONS[relation],
+    relationRating: String(input?.relationRating || '').slice(0, 40),
     attributes: attrs,
-    stability: String(input?.stability || 'Composed'),
+    advantages: [],
+    disadvantages: [],
+    rulesVersion: 'black_madonna_campaign+player_moves_2_alpha',
+    stability: 'Composed',
     wounds: [],
-  };
+  }};
 }
 function pushLog(c, type, seat, detail = {}) {
   c.log.push({ id: randId('e_'), at: Date.now(), type, seat, detail });
@@ -836,7 +918,9 @@ export class CampaignRoom {
       const b = await request.json();
       const other = otherSeat(seat);
       if (b.type === 'set_character') {
-        c.players[seat].character = cleanCharacter(b.character); pushLog(c, 'character_set', seat);
+        const cleaned = cleanCharacter(b.character);
+        if (cleaned.error) return json({ error: cleaned.error }, 400);
+        c.players[seat].character = cleaned.character; pushLog(c, 'character_set', seat, { occupation: cleaned.character.occupation, origin: cleaned.character.origin?.country, region: cleaned.character.origin?.region });
         if (c.players.A?.character && c.players.B?.character && c.current.mode === 'lobby') { storyGate(c, 'gold_plaque', false); c.phase = 'chapter1'; }
       } else if (b.type === 'story_gate_ready') {
         if (c.current.mode !== 'story_gate') return json({ error: 'No Story Lock gate is active.' }, 409);
@@ -942,7 +1026,7 @@ export default {
     if (url.pathname === '/api/health') {
       const smsLoginMode = twilioVerifyConfigured(env) ? 'twilio_verify' : (twilioMessagingConfigured(env) ? 'twilio_messages' : null);
       return json({
-        ok:true, build:'chagidiel-beta-4-login-fix',
+        ok:true, build:'chagidiel-beta-5-character-creator',
         elevenlabsConfigured:!!env.ELEVENLABS_API_KEY,
         r2Configured:!!env.NARRATION_AUDIO,
         authSecretConfigured:!!env.AUTH_SECRET,

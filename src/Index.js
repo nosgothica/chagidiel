@@ -2,14 +2,56 @@ const DEFAULT_VOICE_ID = '54YYBuRuAG6KJooiOhFI';
 const MODEL_ID = 'eleven_multilingual_v2';
 const OUTPUT_FORMAT = 'mp3_44100_128';
 const ELEVEN_BASE = 'https://api.elevenlabs.io';
-const AUDIO_PROFILE_VERSION = 'chagidiel-beta-1';
-const VOICE_SETTINGS = { stability: 0.62, similarity_boost: 0.82, style: 0.0, use_speaker_boost: true, speed: 0.96 };
+const AUDIO_PROFILE_VERSION = 'chagidiel-beta-6-reliable-readaloud-v1';
+const VOICE_SETTINGS = { stability: 0.64, similarity_boost: 0.82, style: 0.0, use_speaker_boost: true, speed: 1.0 };
 
+// Keep the same featured ElevenLabs choices used by the current Sangris build.
+// All additional voices saved to the connected ElevenLabs account are returned too.
 const FEATURED_VOICES = [
-  { voice_id: DEFAULT_VOICE_ID, name: 'Alice - Soothing, Calm and Youthful', sangris_featured_rank: 0 },
-  { voice_id: 'dEKbODj1fSHsx7xQNNLa', name: 'Grizzled Man - Raspy, Natural Narrator', sangris_featured_rank: 1 },
-  { voice_id: 'CKfuQaJKfvUG2Wtrda3Y', name: 'Lison - Seductive and soft French accent', sangris_featured_rank: 2 },
-  { voice_id: 'dTmTLshIypwp08eftJH6', name: 'Sylvie', sangris_featured_rank: 3 },
+  {
+    voice_id: DEFAULT_VOICE_ID,
+    name: 'Alice — Soothing, Calm and Youthful',
+    category: 'featured',
+    description: 'Calm featured narrator and Chagidiel default.',
+    labels: { use_case: 'narrative_story', sangris: 'featured' },
+    preview_url: null,
+    sangris_featured_rank: 0,
+  },
+  {
+    voice_id: 'CKfuQaJKfvUG2Wtrda3Y',
+    name: 'Lison — Seductive and soft French accent',
+    category: 'featured',
+    description: 'Soft, warm French-accented female voice.',
+    labels: { accent: 'French', gender: 'female', use_case: 'characters_animation', sangris: 'featured' },
+    preview_url: null,
+    sangris_featured_rank: 1,
+  },
+  {
+    voice_id: 'dTmTLshIypwp08eftJH6',
+    name: 'Sylvie',
+    category: 'featured',
+    description: 'Classy French-accented female narrative voice.',
+    labels: { accent: 'French', gender: 'female', use_case: 'narrative_story', sangris: 'featured' },
+    preview_url: null,
+    sangris_featured_rank: 2,
+  },
+  {
+    voice_id: 'dEKbODj1fSHsx7xQNNLa',
+    name: 'Grizzled Man — Raspy, Natural Narrator',
+    category: 'featured',
+    description: 'British, middle-aged male narrative voice with a grizzled natural rasp.',
+    labels: { accent: 'British', gender: 'male', use_case: 'narrative_story', descriptive: 'raspy', sangris: 'featured' },
+    preview_url: null,
+    sangris_featured_rank: 3,
+  },
+];
+const FEATURED_SHARED_SEARCHES = [
+  {
+    exactName: 'Dominic - British, Brooding, Intense',
+    search: 'Dominic British Brooding Intense',
+    rank: 4,
+    description: 'British male performance voice with a brooding, intense delivery.',
+  },
 ];
 
 const MOVE_MAP = {
@@ -355,6 +397,21 @@ function publicAccount(user) {
     passwordChangedAt: user.passwordChangedAt || null,
   };
 }
+
+function publicCharacterRecord(rec) {
+  if (!rec) return null;
+  return {
+    id: rec.id,
+    createdAt: rec.createdAt || null,
+    updatedAt: rec.updatedAt || null,
+    character: rec.character || null,
+  };
+}
+function characterStoragePrefix(uid) { return `character:${String(uid || '')}:`; }
+function characterStorageKey(uid, id) { return `${characterStoragePrefix(uid)}${String(id || '')}`; }
+function campaignMemoryKey(uid) { return `campaigns:${String(uid || '')}`; }
+function validCharacterId(id) { return /^pc_[a-f0-9]{8,64}$/.test(String(id || '')); }
+function validCampaignId(id) { return /^c_[a-f0-9]+$/.test(String(id || '')); }
 async function signUserSession(env, user) {
   return signSession(env, {
     uid: user.uid,
@@ -387,14 +444,14 @@ function rollFor(character, moveKey, extra = 0) {
 
 function newCampaign(id, invite, creator) {
   return {
-    version: 1,
+    version: 2,
     id,
     invite,
     createdAt: Date.now(),
     revision: 1,
     phase: 'lobby',
     players: {
-      A: { uid: creator.uid, contact: creator.contact, method: creator.method, character: null, lastSeen: Date.now(), prefs: { storyAlerts: true, evidenceAlerts: true } },
+      A: { uid: creator.uid, contact: creator.contact, method: creator.method, characterId: null, character: null, characterHistory: [], entry: null, lastSeen: Date.now(), prefs: { storyAlerts: true, evidenceAlerts: true } },
       B: null,
     },
     current: { mode: 'lobby', scene: 'setup', beat: 0 },
@@ -402,6 +459,7 @@ function newCampaign(id, invite, creator) {
     freeRoam: { day: '17 September 1991', slots: { A: [null, null, null], B: [null, null, null] }, lastResult: { A: null, B: null } },
     journal: { shared: [], private: { A: [], B: [] } },
     flags: { goldPlaqueDone: false, ambushDone: false, pogodinAvailable: false, betaComplete: false, marked: { A: false, B: false }, infection: { A: false, B: false } },
+    processedActions: [],
     log: [],
   };
 }
@@ -514,6 +572,90 @@ function finishStory(c, nextMode = 'free_roam') {
   if (nextMode === 'free_roam') c.current = { mode: 'free_roam', scene: 'berlin_free_roam', beat: 0 };
 }
 
+function occupationEcho(character, scene) {
+  const occupation = character?.occupation;
+  const map = {
+    gold_plaque: {
+      stasi: 'Crowds like this used to be work: faces, exits, who speaks too softly, who keeps checking the door. The habit remains even if the institution does not.',
+      diplomatic: 'You know this kind of room. Politeness is a tool, introductions are transactions, and almost everyone is pretending not to measure everyone else.',
+      professor: 'The ceremony has the strained formality of an academic reception with more money and less honesty. You recognize people by citation, scandal, and reputation before face.',
+      black_marketeer: 'You read the room in practical terms: who has access, who owes whom, who is wearing something they could not have bought through ordinary channels.',
+      legionnaire: 'Your attention keeps returning to exits, sight-lines, and hands. It is difficult to attend a civilian reception without quietly turning it into terrain.',
+      journalist: 'Names arrange themselves into leads before you can stop them. Publishers, writers, politicians, and the people who hover near them are all potential sources.',
+      writer: 'The party is already editing itself in your head: chandelier light, rain on glass, expensive voices flattening fear into anecdote.',
+      bookseller: 'The room contains people who know the price of rare books and people who only know the prestige of owning them. You can usually tell which is which.',
+      kgb: 'You were trained to notice surveillance before conversation. Tonight, several people are watching the room too carefully for civilians.',
+      literary_agent: 'Everyone here wants something from someone else. That makes the room legible.'
+    },
+    ambush: {
+      stasi: 'The first seconds feel horribly familiar: identify the threat, identify the route, identify who is already compromised.',
+      diplomatic: 'Protocol becomes useless the instant the first shot is fired. What remains is judgment under pressure.',
+      professor: 'There is no useful theory for the sound of a bullet arriving before you understand where it came from.',
+      black_marketeer: 'People who mean to frighten you usually advertise it. Professionals do not. These men look professional.',
+      legionnaire: 'Training takes the first second away from fear and gives it to movement.',
+      journalist: 'Part of you is already recording details—the van, the angle, the faces—even while the rest of you tries to stay alive.',
+      writer: 'Violence is faster and less elegant than it ever is on the page.',
+      bookseller: 'The attack makes every occult theory feel offensively abstract. Somebody has chosen rifles instead.',
+      kgb: 'This is an operation, not a warning. You recognize the difference immediately.',
+      literary_agent: 'There is no negotiation in the opening seconds. That, more than the gunfire, tells you what sort of people these are.'
+    },
+    pogodin: {
+      stasi: 'Security routines are still routines. The old part of your mind begins cataloguing them before you consciously decide to.',
+      diplomatic: 'The mansion is power made architectural: privacy, guards, controlled access, and the confidence that consequences happen to other people.',
+      professor: 'The ritual architecture borrows from traditions that should not fit together. Somehow, here, they do.',
+      black_marketeer: 'Money explains the guards and the house. It does not explain what has been built beneath it.',
+      legionnaire: 'The estate has defensible approaches and disciplined men. You stop thinking of it as a residence.',
+      journalist: 'Every closed door feels like a source refusing comment. The difference is that these sources may shoot you.',
+      writer: 'The house has the unpleasant quality of a place that would be called unbelievable if you invented it.',
+      bookseller: 'Symbols you have seen reproduced badly in expensive books are cut here with the confidence of people who believe they know what they are doing.',
+      kgb: 'Compartmentalization, guards, controlled movement, ritualized loyalty: the structure feels political even before it becomes supernatural.',
+      literary_agent: 'The people above are protecting reputations. The people below are protecting something else.'
+    }
+  };
+  return map[scene]?.[occupation] || null;
+}
+function magdaEcho(character, scene) {
+  if (scene !== 'gold_plaque') return null;
+  const map = {
+    child: 'Magda is not merely the woman everyone else is waiting to meet. Whatever years were taken from you, her face still belongs to the unfinished business of family.',
+    journalism: 'You have seen Magda tired before, after deadlines and bad interviews. This is different. She looks as though sleep itself has become dangerous.',
+    bookstore: 'You remember her behind a counter with dust on her sleeves and an opinion about almost every book you picked up. The woman entering the room tonight looks decades older than that memory should allow.',
+    friend: 'You know Magda well enough to recognize the effort behind her smile and not well enough to know what she is hiding.',
+    helped: 'Once, Magda noticed that you were falling apart before you admitted it yourself. Tonight the direction of that debt has reversed.',
+    lover: 'There are expressions you remember from closer distances than this. Fear was never one of the ones she wore easily.',
+    literary: 'You have watched Magda move through rooms like this before. Tonight she does not work the crowd; she endures it.'
+  };
+  return map[character?.relation] || null;
+}
+function darkSecretEcho(character, scene) {
+  if (!character?.darkSecret) return null;
+  if (scene === 'pogodin' && character.darkSecret === 'occult_fascination') return 'Some of what you see below the mansion resembles things you once pursued because they were forbidden, obscure, or beautiful. None of it feels beautiful now.';
+  if (scene === 'ambush' && character.darkSecret === 'flashbacks') return 'The present threatens to split around the edges. You force yourself to keep the street in front of you separate from the place your memory is trying to impose over it.';
+  if (scene === 'gold_plaque' && character.darkSecret === 'strange_death') return 'For one moment, the Russians’ reaction gives you the same cold sensation as the death you have never been able to explain: the certainty that someone else knows more than you do.';
+  return null;
+}
+function personalizeStory(c, seat, shared) {
+  const character = c.players?.[seat]?.character;
+  if (!character || !shared) return shared;
+  const personal = [magdaEcho(character, c.current.scene), occupationEcho(character, c.current.scene), darkSecretEcho(character, c.current.scene)].filter(Boolean);
+  if (c.players?.[seat]?.entry?.pending) personal.unshift(c.players[seat].entry.text);
+  if (!personal.length) return shared;
+  const text = [...shared.text];
+  const insertAt = Math.min(1, text.length);
+  text.splice(insertAt, 0, ...personal);
+  return { ...shared, text };
+}
+function freeRoamCharacterEcho(character, location) {
+  if (!character) return null;
+  const occ = character.occupation;
+  if (location === 'records' && ['stasi','kgb','diplomatic','journalist'].includes(occ)) return 'Your professional history changes what you notice first: not the file itself, but who controls access to it, who is afraid of being blamed, and where the bureaucracy has become porous.';
+  if (location === 'mantra' && ['bookseller','writer','professor'].includes(occ)) return 'The language is strange, but not entirely foreign to you. You recognize enough references to separate deliberate obscurity from genuine tradition.';
+  if (location === 'slavic' && ['stasi','kgb','journalist','black_marketeer'].includes(occ)) return 'The public organization and the private network do not line up. Your background makes the gap easier to see.';
+  if ((location === 'hamburg_apartment' || location === 'berlin_apartment') && ['journalist','stasi','kgb'].includes(occ)) return 'You search less like a visitor than someone reconstructing another person’s habits: what is missing, what is staged, and what was meant to survive an unexpected absence.';
+  if (character.origin?.country === 'germany' && /East Berlin|Saxony|Thuringia|Mecklenburg|Saxony-Anhalt|Brandenburg/.test(character.origin?.region || '') && location === 'records') return 'The basement bureaucracy is familiar in a way you do not enjoy. Reunification changed the letterhead faster than it changed the habits.';
+  return null;
+}
+
 function sharedStoryText(c) {
   const s = c.current.scene, b = c.current.beat;
   if (s === 'gold_plaque') {
@@ -617,18 +759,18 @@ function publicView(c, uid, online = {}) {
   const own = c.players[seat];
   const partner = c.players[other];
   const base = {
-    id: c.id, revision: c.revision, phase: c.phase, seat,
-    player: { character: own?.character || null },
-    partner: partner ? { character: partner.character ? { name: partner.character.name, occupation: partner.character.occupation } : null, online: !!online[other], lastSeen: partner.lastSeen || null } : null,
+    id: c.id, revision: c.revision, savedAt: c.savedAt || c.createdAt || null, saveReason: c.saveReason || 'campaign', phase: c.phase, seat,
+    player: { characterId: own?.characterId || null, character: own?.character || null, entry: own?.entry || null },
+    partner: partner ? { characterId: partner.characterId || null, character: partner.character ? { name: partner.character.name, occupation: partner.character.occupation, occupationName: partner.character.occupationName } : null, online: !!online[other], lastSeen: partner.lastSeen || null } : null,
     current: c.current,
     flags: { ...c.flags, marked: { self: !!c.flags.marked[seat], partnerKnown: false }, infection: { self: !!c.flags.infection[seat] } },
     storyLock: { active: c.storyLock.active, gate: c.storyLock.gate, ready: c.storyLock.ready, submitted: !!c.storyLock.actions?.[seat], partnerSubmitted: !!c.storyLock.actions?.[other], lastResolution: c.storyLock.lastResolution },
-    freeRoam: { day: c.freeRoam.day, slots: c.freeRoam.slots[seat], partnerSlotsUsed: spentCount(c, other), lastResult: c.freeRoam.lastResult[seat], locations: Object.fromEntries(Object.entries(FREE_ROAM_LOCATIONS).map(([id, x]) => [id, { name: x.name, art: x.art, frame: x.frame, actions: Object.fromEntries(Object.entries(x.actions).map(([aid,a]) => [aid,{ label:a.label, move:a.move, attribute:a.attribute || (MOVE_MAP[a.move]?.attribute || null) }])) }])) },
+    freeRoam: { day: c.freeRoam.day, slots: c.freeRoam.slots[seat], partnerSlotsUsed: spentCount(c, other), lastResult: c.freeRoam.lastResult[seat] ? { ...c.freeRoam.lastResult[seat], characterEcho: freeRoamCharacterEcho(own?.character, c.freeRoam.lastResult[seat]?.location) } : null, locations: Object.fromEntries(Object.entries(FREE_ROAM_LOCATIONS).map(([id, x]) => [id, { name: x.name, art: x.art, frame: x.frame, actions: Object.fromEntries(Object.entries(x.actions).map(([aid,a]) => [aid,{ label:a.label, move:a.move, attribute:a.attribute || (MOVE_MAP[a.move]?.attribute || null) }])) }])) },
     journal: { shared: c.journal.shared.map(x => ({ ...x, clue: CLUES[x.clueId] })), private: c.journal.private[seat].map(x => ({ ...x, clue: CLUES[x.clueId] })) },
     betaComplete: c.flags.betaComplete,
   };
   if (c.current.mode === 'story_lock') {
-    base.story = sharedStoryText(c);
+    base.story = personalizeStory(c, seat, sharedStoryText(c));
     base.choices = lockChoices(c, seat);
   }
   return base;
@@ -759,6 +901,72 @@ export class AuthRoom {
       return json({ ok: true, user: publicAccount(user) });
     }
 
+
+    if (url.pathname === '/characters') {
+      const uid = String(request.headers.get('x-chagidiel-user') || '');
+      if (!uid) return json({ error: 'Authentication required.' }, 401);
+      if (request.method === 'GET') {
+        const listed = await this.state.storage.list({ prefix: characterStoragePrefix(uid) });
+        const characters = [...listed.values()].map(publicCharacterRecord).sort((a,b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0));
+        return json({ ok: true, characters });
+      }
+      if (request.method === 'POST') {
+        let body; try { body = await request.json(); } catch (_) { return json({ error: 'Invalid request.' }, 400); }
+        const cleaned = cleanCharacter(body.character);
+        if (cleaned.error) return json({ error: cleaned.error }, 400);
+        const listed = await this.state.storage.list({ prefix: characterStoragePrefix(uid) });
+        if (listed.size >= 20) return json({ error: 'Character library limit reached (20).' }, 409);
+        const now = Date.now();
+        const id = randId('pc_');
+        const rec = { id, ownerUid: uid, character: cleaned.character, createdAt: now, updatedAt: now };
+        await this.state.storage.put(characterStorageKey(uid,id), rec);
+        return json({ ok: true, record: publicCharacterRecord(rec) }, 201);
+      }
+      return json({ error: 'Method not allowed.' }, 405);
+    }
+
+    const characterMatch = url.pathname.match(/^\/characters\/(pc_[a-f0-9]+)$/);
+    if (characterMatch) {
+      const uid = String(request.headers.get('x-chagidiel-user') || '');
+      if (!uid) return json({ error: 'Authentication required.' }, 401);
+      const id = characterMatch[1];
+      const key = characterStorageKey(uid,id);
+      const rec = await this.state.storage.get(key);
+      if (!rec) return json({ error: 'Character not found.' }, 404);
+      if (request.method === 'GET') return json({ ok: true, record: publicCharacterRecord(rec) });
+      if (request.method === 'PUT') {
+        let body; try { body = await request.json(); } catch (_) { return json({ error: 'Invalid request.' }, 400); }
+        const cleaned = cleanCharacter(body.character);
+        if (cleaned.error) return json({ error: cleaned.error }, 400);
+        rec.character = cleaned.character; rec.updatedAt = Date.now();
+        await this.state.storage.put(key, rec);
+        return json({ ok: true, record: publicCharacterRecord(rec) });
+      }
+      if (request.method === 'DELETE') {
+        await this.state.storage.delete(key);
+        return json({ ok: true, deleted: id });
+      }
+      return json({ error: 'Method not allowed.' }, 405);
+    }
+
+    if (url.pathname === '/campaigns') {
+      const uid = String(request.headers.get('x-chagidiel-user') || '');
+      if (!uid) return json({ error: 'Authentication required.' }, 401);
+      const key = campaignMemoryKey(uid);
+      const current = await this.state.storage.get(key) || { ids: [], lastId: null, updatedAt: null };
+      if (request.method === 'GET') return json({ ok: true, ...current });
+      if (request.method === 'POST') {
+        let body; try { body = await request.json(); } catch (_) { return json({ error: 'Invalid request.' }, 400); }
+        const campaignId = String(body.campaignId || '');
+        if (!validCampaignId(campaignId)) return json({ error: 'Invalid campaign id.' }, 400);
+        current.ids = [campaignId, ...(current.ids || []).filter(x => x !== campaignId)].slice(0, 20);
+        current.lastId = campaignId; current.updatedAt = Date.now();
+        await this.state.storage.put(key, current);
+        return json({ ok: true, ...current });
+      }
+      return json({ error: 'Method not allowed.' }, 405);
+    }
+
     if (url.pathname === '/forgot') {
       if (request.method !== 'POST') return json({ error: 'Method not allowed.' }, 405);
       let body; try { body = await request.json(); } catch (_) { return json({ error: 'Invalid request.' }, 400); }
@@ -863,7 +1071,13 @@ export class CampaignRoom {
     this.state = state; this.env = env; this.sockets = new Map();
   }
   async load() { return await this.state.storage.get('campaign'); }
-  async save(c) { c.revision = Number(c.revision || 0) + 1; await this.state.storage.put('campaign', c); return c; }
+  async save(c, reason = 'progress') {
+    c.revision = Number(c.revision || 0) + 1;
+    c.savedAt = Date.now();
+    c.saveReason = String(reason || 'progress').slice(0, 80);
+    await this.state.storage.put('campaign', c);
+    return c;
+  }
   presence() {
     const out = { A: false, B: false };
     for (const [seat, set] of this.sockets) out[seat] = set.size > 0;
@@ -885,7 +1099,7 @@ export class CampaignRoom {
     const method = request.headers.get('x-chagidiel-method');
     if (url.pathname === '/init') {
       let c = await this.load();
-      if (!c) { const b = await request.json(); c = newCampaign(b.id, b.invite, { uid, contact, method }); await this.state.storage.put('campaign', c); }
+      if (!c) { const b = await request.json(); c = newCampaign(b.id, b.invite, { uid, contact, method }); c.savedAt = Date.now(); c.saveReason = 'campaign_created'; await this.state.storage.put('campaign', c); }
       return json({ ok: true, state: publicView(c, uid, this.presence()), invite: c.invite });
     }
     let c = await this.load();
@@ -896,15 +1110,19 @@ export class CampaignRoom {
       if (!seat) {
         if (c.players.B) return json({ error: 'Campaign already has two players.' }, 409);
         if (String(b.invite || '') !== String(c.invite || '')) return json({ error: 'Invalid invite code.' }, 403);
-        c.players.B = { uid, contact, method, character: null, lastSeen: Date.now(), prefs: { storyAlerts: true, evidenceAlerts: true } };
-        c.invite = null; seat = 'B'; pushLog(c, 'player_joined', seat); await this.save(c);
+        c.players.B = { uid, contact, method, characterId: null, character: null, characterHistory: [], entry: null, lastSeen: Date.now(), prefs: { storyAlerts: true, evidenceAlerts: true } };
+        c.invite = null; seat = 'B'; pushLog(c, 'player_joined', seat); await this.save(c, 'player_joined');
       }
       this.broadcast(c); return json({ ok: true, seat, state: publicView(c, uid, this.presence()) });
     }
     const seat = seatFor(c, uid);
     if (!seat) return json({ error: 'You are not a member of this campaign.' }, 403);
     c.players[seat].lastSeen = Date.now();
-    if (url.pathname === '/state') return json({ ok: true, state: publicView(c, uid, this.presence()) });
+    if (url.pathname === '/state') {
+      c.lastOpenedAt = Date.now();
+      await this.save(c, 'browser_load');
+      return json({ ok: true, state: publicView(c, uid, this.presence()) });
+    }
     if (url.pathname === '/ws') {
       if (request.headers.get('upgrade') !== 'websocket') return json({ error: 'WebSocket required.' }, 426);
       const pair = new WebSocketPair(); const client = pair[0], server = pair[1]; server.accept();
@@ -917,11 +1135,50 @@ export class CampaignRoom {
     if (url.pathname === '/action') {
       const b = await request.json();
       const other = otherSeat(seat);
-      if (b.type === 'set_character') {
+      if (!Array.isArray(c.processedActions)) c.processedActions = [];
+      const clientActionId = String(b.clientActionId || '').slice(0, 120);
+      if (clientActionId && c.processedActions.includes(clientActionId)) return json({ ok: true, deduplicated: true, state: publicView(c, uid, this.presence()) });
+      if (b.type === 'set_character' || b.type === 'assign_character' || b.type === 'edit_character') {
         const cleaned = cleanCharacter(b.character);
         if (cleaned.error) return json({ error: cleaned.error }, 400);
-        c.players[seat].character = cleaned.character; pushLog(c, 'character_set', seat, { occupation: cleaned.character.occupation, origin: cleaned.character.origin?.country, region: cleaned.character.origin?.region });
+        const player = c.players[seat];
+        if (!Array.isArray(player.characterHistory)) player.characterHistory = [];
+        const incomingId = validCharacterId(b.characterId) ? String(b.characterId) : (player.characterId || null);
+        const editingSame = !!player.character && !!incomingId && player.characterId === incomingId && b.type !== 'assign_character';
+        const replacing = !!player.character && !!incomingId && player.characterId && player.characterId !== incomingId;
+        if (replacing && c.current.mode === 'story_lock') return json({ error: 'Finish the active Story Lock before replacing a protagonist.' }, 409);
+        const previous = player.character;
+        if (editingSame && previous) {
+          cleaned.character.stability = previous.stability || 'Composed';
+          cleaned.character.wounds = Array.isArray(previous.wounds) ? previous.wounds : [];
+          player.character = cleaned.character;
+          player.characterId = incomingId;
+          pushLog(c, 'character_edited', seat, { characterId: incomingId, name: cleaned.character.name });
+        } else {
+          if (previous) player.characterHistory.push({ characterId: player.characterId || null, name: previous.name, occupation: previous.occupation, replacedAt: Date.now(), revision: c.revision });
+          if (player.characterHistory.length > 12) player.characterHistory = player.characterHistory.slice(-12);
+          player.characterId = incomingId;
+          player.character = cleaned.character;
+          if (previous && previous.name !== cleaned.character.name) {
+            c.journal.private[seat] = [];
+            c.freeRoam.lastResult[seat] = null;
+            c.flags.marked[seat] = false;
+            c.flags.infection[seat] = !!c.flags.goldPlaqueDone;
+            if (c.current.mode === 'story_gate') {
+              c.storyLock.ready[seat] = false;
+              if (c.storyLock.gate?.acknowledged) c.storyLock.gate.acknowledged[seat] = false;
+            }
+            const illness = c.flags.goldPlaqueDone ? ' Recent contact with Magda has left you with the same inexplicable illness already driving the investigation.' : '';
+            player.entry = { pending: true, at: Date.now(), replacedName: previous.name, text: `${cleaned.character.name} enters an investigation already in motion. Your connection to Magda makes the case personal before it becomes comprehensible.${illness}` };
+            pushLog(c, 'character_replaced', seat, { from: previous.name, to: cleaned.character.name, characterId: incomingId });
+          } else {
+            player.entry = null;
+            pushLog(c, 'character_set', seat, { characterId: incomingId, occupation: cleaned.character.occupation, origin: cleaned.character.origin?.country, region: cleaned.character.origin?.region });
+          }
+        }
         if (c.players.A?.character && c.players.B?.character && c.current.mode === 'lobby') { storyGate(c, 'gold_plaque', false); c.phase = 'chapter1'; }
+      } else if (b.type === 'ack_character_entry') {
+        if (c.players[seat].entry) c.players[seat].entry.pending = false;
       } else if (b.type === 'story_gate_ready') {
         if (c.current.mode !== 'story_gate') return json({ error: 'No Story Lock gate is active.' }, 409);
         if (c.storyLock.gate?.forced) c.storyLock.gate.acknowledged[seat] = true; else c.storyLock.ready[seat] = true;
@@ -978,7 +1235,11 @@ export class CampaignRoom {
         const moveKey = String(b.move || ''); const move = MOVE_MAP[moveKey]; if (!move) return json({ error: 'Unknown move.' }, 400);
         const roll = rollFor(c.players[seat].character, moveKey, Number(b.extra || 0)); c.freeRoam.lastResult[seat] = { kind: 'roll', roll, at: Date.now() }; pushLog(c, 'roll_resolved', seat, { roll });
       } else return json({ error: 'Unknown action.' }, 400);
-      await this.save(c); this.broadcast(c); return json({ ok: true, state: publicView(c, uid, this.presence()) });
+      // A replacement character's entry note is shown on the first rendered campaign page.
+      // After that protagonist takes any normal action, consider the handoff integrated into play.
+      if (!['ack_character_entry','assign_character','set_character','edit_character','story_gate_ready','story_gate_cancel'].includes(b.type) && c.players[seat].entry?.pending) c.players[seat].entry.pending = false;
+      if (clientActionId) { c.processedActions.push(clientActionId); if (c.processedActions.length > 80) c.processedActions = c.processedActions.slice(-80); }
+      await this.save(c, b.type || 'action'); this.broadcast(c); return json({ ok: true, state: publicView(c, uid, this.presence()) });
     }
     return json({ error: 'Not found.' }, 404);
   }
@@ -986,23 +1247,102 @@ export class CampaignRoom {
 
 function safeVoiceId(value) { const v = String(value || '').trim(); return /^[A-Za-z0-9_-]{10,64}$/.test(v) ? v : DEFAULT_VOICE_ID; }
 async function shortHash(text) { const d = await sha(text); return [...d.slice(0, 10)].map(x => x.toString(16).padStart(2,'0')).join(''); }
+let sharedFeaturedCache = { at: 0, voices: [] };
+function normalizedVoiceName(value) {
+  return String(value || '').toLowerCase().replace(/[—–]/g, '-').replace(/[^a-z0-9]+/g, ' ').trim();
+}
+async function resolveSharedFeaturedVoices(env) {
+  if (!env.ELEVENLABS_API_KEY) return [];
+  const now = Date.now();
+  if (sharedFeaturedCache.at && now - sharedFeaturedCache.at < 10 * 60 * 1000) return sharedFeaturedCache.voices;
+  const found = [];
+  for (const spec of FEATURED_SHARED_SEARCHES) {
+    try {
+      const response = await fetch(`${ELEVEN_BASE}/v1/shared-voices?page_size=30&search=${encodeURIComponent(spec.search)}`, { headers: { 'xi-api-key': env.ELEVENLABS_API_KEY } });
+      if (!response.ok) continue;
+      const data = await response.json();
+      const target = normalizedVoiceName(spec.exactName);
+      const voice = (data.voices || []).find(v => normalizedVoiceName(v.name) === target)
+        || (data.voices || []).find(v => normalizedVoiceName(v.name).includes('dominic') && normalizedVoiceName(v.name).includes('brooding'));
+      if (!voice?.voice_id) continue;
+      found.push({
+        voice_id: voice.voice_id,
+        name: voice.name || spec.exactName,
+        category: voice.category || 'featured',
+        description: voice.description || spec.description,
+        labels: { accent: voice.accent || 'British', gender: voice.gender || 'male', age: voice.age || '', use_case: voice.use_case || 'narrative_story', descriptive: voice.descriptive || 'intense', sangris: 'featured' },
+        preview_url: voice.preview_url || null,
+        sangris_featured: true,
+        sangris_featured_rank: spec.rank,
+        shared_voice: true,
+      });
+    } catch (_) {}
+  }
+  sharedFeaturedCache = { at: now, voices: found };
+  return found;
+}
 async function listVoices(env) {
   if (!env.ELEVENLABS_API_KEY) return FEATURED_VOICES;
   const r = await fetch(`${ELEVEN_BASE}/v2/voices?page_size=100&sort=name&sort_direction=asc&include_total_count=false`, { headers: { 'xi-api-key': env.ELEVENLABS_API_KEY } });
   if (!r.ok) throw new Error(`ElevenLabs voices request failed (${r.status})`);
-  const d = await r.json(); const voices = (d.voices || []).map(v => ({ voice_id: v.voice_id, name: v.name || 'Unnamed voice', category: v.category || '', description: v.description || '', labels: v.labels || {}, preview_url: v.preview_url || null }));
-  for (const f of FEATURED_VOICES) if (!voices.some(v => v.voice_id === f.voice_id)) voices.push(f);
-  return voices.sort((a,b) => (a.sangris_featured_rank ?? 999) - (b.sangris_featured_rank ?? 999) || String(a.name).localeCompare(String(b.name)));
+  const d = await r.json();
+  const voices = (d.voices || []).map(v => ({ voice_id: v.voice_id, name: v.name || 'Unnamed voice', category: v.category || '', description: v.description || '', labels: v.labels || {}, preview_url: v.preview_url || null }));
+  for (const featured of FEATURED_VOICES) {
+    const existing = voices.find(v => v.voice_id === featured.voice_id);
+    if (existing) Object.assign(existing, { sangris_featured: true, sangris_featured_rank: featured.sangris_featured_rank, description: existing.description || featured.description, labels: { ...featured.labels, ...(existing.labels || {}) } });
+    else voices.push({ ...featured, sangris_featured: true });
+  }
+  for (const featured of await resolveSharedFeaturedVoices(env)) {
+    const existing = voices.find(v => v.voice_id === featured.voice_id);
+    if (existing) Object.assign(existing, { ...featured, labels: { ...(existing.labels || {}), ...(featured.labels || {}) } });
+    else voices.push(featured);
+  }
+  voices.sort((a,b) => {
+    if (a.voice_id === DEFAULT_VOICE_ID) return -1;
+    if (b.voice_id === DEFAULT_VOICE_ID) return 1;
+    const ar = Number.isFinite(Number(a.sangris_featured_rank)) ? Number(a.sangris_featured_rank) : 999;
+    const br = Number.isFinite(Number(b.sangris_featured_rank)) ? Number(b.sangris_featured_rank) : 999;
+    return ar - br || String(a.name).localeCompare(String(b.name));
+  });
+  return voices;
+}
+async function elevenTTSWithRetry(url, options) {
+  let last = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const response = await fetch(url, options);
+      last = response;
+      if (response.ok || ![408,425,429,500,502,503,504].includes(response.status)) return response;
+      if (attempt < 2) {
+        const retryAfter = Number(response.headers.get('retry-after') || 0);
+        const delay = retryAfter > 0 ? Math.min(retryAfter * 1000, 5000) : 550 * Math.pow(2, attempt);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    } catch (error) {
+      if (attempt === 2) throw error;
+      await new Promise(resolve => setTimeout(resolve, 550 * Math.pow(2, attempt)));
+    }
+  }
+  return last;
 }
 async function tts(env, voiceId, text, key) {
   if (!env.ELEVENLABS_API_KEY) return json({ error: 'ElevenLabs secret is not configured.' }, 503);
   if (!env.NARRATION_AUDIO) return json({ error: 'Narration R2 binding is not configured.' }, 503);
-  const cleaned = String(text || '').replace(/\r/g,'').trim(); if (!cleaned || cleaned.length > 18000) return json({ error: 'Invalid narration text.' }, 400);
-  const version = await shortHash(`${MODEL_ID}\n${AUDIO_PROFILE_VERSION}\n${voiceId}\n${cleaned}`); const objectKey = `chagidiel/${voiceId}/${key}_${version}.mp3`;
-  const cached = await env.NARRATION_AUDIO.get(objectKey); if (cached) { const h = new Headers(); cached.writeHttpMetadata(h); h.set('content-type','audio/mpeg'); h.set('x-narration-cache','HIT'); return new Response(cached.body,{headers:h}); }
-  const r = await fetch(`${ELEVEN_BASE}/v1/text-to-speech/${encodeURIComponent(voiceId)}?output_format=${OUTPUT_FORMAT}`, { method:'POST', headers:{'xi-api-key':env.ELEVENLABS_API_KEY,'content-type':'application/json',accept:'audio/mpeg'}, body:JSON.stringify({text:cleaned,model_id:MODEL_ID,voice_settings:VOICE_SETTINGS}) });
-  if (!r.ok) return json({ error:'ElevenLabs generation failed.', status:r.status, detail:(await r.text()).slice(0,500) },502);
-  const audio = await r.arrayBuffer(); await env.NARRATION_AUDIO.put(objectKey,audio,{httpMetadata:{contentType:'audio/mpeg'}}); return new Response(audio,{headers:{'content-type':'audio/mpeg','x-narration-cache':'MISS'}});
+  const cleaned = String(text || '').replace(/\r/g,'').trim();
+  if (!cleaned || cleaned.length > 18000) return json({ error: 'Invalid narration text.' }, 400);
+  const version = await shortHash(`${MODEL_ID}
+${AUDIO_PROFILE_VERSION}
+${JSON.stringify(VOICE_SETTINGS)}
+${voiceId}
+${cleaned}`);
+  const objectKey = `chagidiel/${voiceId}/${key}_${version}.mp3`;
+  const cached = await env.NARRATION_AUDIO.get(objectKey);
+  if (cached) { const h = new Headers(); cached.writeHttpMetadata(h); h.set('content-type','audio/mpeg'); h.set('x-narration-cache','HIT'); return new Response(cached.body,{headers:h}); }
+  const r = await elevenTTSWithRetry(`${ELEVEN_BASE}/v1/text-to-speech/${encodeURIComponent(voiceId)}?output_format=${OUTPUT_FORMAT}`, { method:'POST', headers:{'xi-api-key':env.ELEVENLABS_API_KEY,'content-type':'application/json',accept:'audio/mpeg'}, body:JSON.stringify({text:cleaned,model_id:MODEL_ID,voice_settings:VOICE_SETTINGS}) });
+  if (!r?.ok) return json({ error:'ElevenLabs generation failed.', status:r?.status || 502, detail:r ? (await r.text()).slice(0,500) : 'No response from ElevenLabs.' },502);
+  const audio = await r.arrayBuffer();
+  await env.NARRATION_AUDIO.put(objectKey,audio,{httpMetadata:{contentType:'audio/mpeg'}});
+  return new Response(audio,{headers:{'content-type':'audio/mpeg','cache-control':'private, max-age=31536000','x-narration-cache':'MISS'}});
 }
 
 function campaignStub(env, id) { return env.CAMPAIGNS.get(env.CAMPAIGNS.idFromName(id)); }
@@ -1026,7 +1366,7 @@ export default {
     if (url.pathname === '/api/health') {
       const smsLoginMode = twilioVerifyConfigured(env) ? 'twilio_verify' : (twilioMessagingConfigured(env) ? 'twilio_messages' : null);
       return json({
-        ok:true, build:'chagidiel-beta-5-character-creator',
+        ok:true, build:'chagidiel-beta-6-character-library-autosave-readaloud',
         elevenlabsConfigured:!!env.ELEVENLABS_API_KEY,
         r2Configured:!!env.NARRATION_AUDIO,
         authSecretConfigured:!!env.AUTH_SECRET,
@@ -1040,7 +1380,12 @@ export default {
         webPushConfigured:false,
         passwordAccounts:true,
         adminBootstrapConfigured:!!(env.ADMIN_EMAIL&&env.ADMIN_PASSWORD),
-        passwordResetEmailConfigured:!!(env.RESEND_API_KEY&&env.RESEND_FROM)
+        passwordResetEmailConfigured:!!(env.RESEND_API_KEY&&env.RESEND_FROM),
+        characterLibrary:true,
+        progressiveCampaignSave:true,
+        accountCampaignResume:true,
+        sangrisFeaturedVoices:true,
+        readAloudProfile:AUDIO_PROFILE_VERSION
       },200,{'cache-control':'no-store'});
     }
     if (url.pathname === '/api/config') return json({ vapidPublicKey: env.VAPID_PUBLIC_KEY || null, pushDelivery: false });
@@ -1060,6 +1405,26 @@ export default {
       if (!user) return json({ error: 'Authentication required.' }, 401);
       return json({ ok: true, user: { uid:user.uid, email:user.email, contact:user.email, method:'email', role:user.role, createdAt:user.createdAt, lastLoginAt:user.lastLoginAt } });
     }
+    if (url.pathname === '/api/characters' && ['GET','POST'].includes(request.method)) {
+      const user = await authFromRequest(request, env, url);
+      if (!user) return json({ error: 'Authentication required.' }, 401);
+      const headers = new Headers({ 'x-chagidiel-user': user.uid });
+      if (request.method === 'POST') headers.set('content-type','application/json');
+      return authStub(env).fetch('https://auth/characters', { method: request.method, headers, body: request.method === 'POST' ? await request.text() : undefined });
+    }
+    const characterApiMatch = url.pathname.match(/^\/api\/characters\/(pc_[a-f0-9]+)$/);
+    if (characterApiMatch && ['GET','PUT','DELETE'].includes(request.method)) {
+      const user = await authFromRequest(request, env, url);
+      if (!user) return json({ error: 'Authentication required.' }, 401);
+      const headers = new Headers({ 'x-chagidiel-user': user.uid });
+      if (request.method === 'PUT') headers.set('content-type','application/json');
+      return authStub(env).fetch(`https://auth/characters/${characterApiMatch[1]}`, { method: request.method, headers, body: request.method === 'PUT' ? await request.text() : undefined });
+    }
+    if (url.pathname === '/api/campaigns/mine' && request.method === 'GET') {
+      const user = await authFromRequest(request, env, url);
+      if (!user) return json({ error: 'Authentication required.' }, 401);
+      return authStub(env).fetch('https://auth/campaigns', { method:'GET', headers:{ 'x-chagidiel-user':user.uid } });
+    }
     if (url.pathname === '/api/admin/users' && request.method === 'GET') {
       const user = await authFromRequest(request, env, url);
       if (!user || user.role !== 'admin') return json({ error: 'Administrator access required.' }, 403);
@@ -1071,23 +1436,43 @@ export default {
       const body = await request.text();
       return authStub(env).fetch('https://auth/admin/reset', { method:'POST', headers:{ 'content-type':'application/json', 'x-chagidiel-admin':'1', 'x-chagidiel-admin-uid':user.uid, 'x-chagidiel-origin':url.origin }, body });
     }
-    if (url.pathname === '/api/voices') { try { return json({ default_voice_id:DEFAULT_VOICE_ID, voices:await listVoices(env) }); } catch(e){ return json({error:String(e.message||e)},502); } }
+    if (url.pathname === '/api/voices') {
+      const user = await authFromRequest(request, env, url); if (!user) return json({ error:'Authentication required.' },401);
+      try { return json({ default_voice_id:DEFAULT_VOICE_ID, voices:await listVoices(env) }); } catch(e){ return json({error:String(e.message||e)},502); }
+    }
     if (url.pathname === '/api/narration-page') {
       if (request.method !== 'POST') return json({error:'Method not allowed.'},405);
-      let b; try{b=await request.json();}catch(_){return json({error:'Invalid JSON.'},400);} const voice=safeVoiceId(b.voice); const scene=String(b.scene||'page').replace(/[^A-Za-z0-9_-]/g,'').slice(0,80)||'page'; const hash=await shortHash(String(b.text||'')); return tts(env,voice,b.text,`${scene}_${hash}`);
+      const user = await authFromRequest(request, env, url); if (!user) return json({ error:'Authentication required.' },401);
+      const site = request.headers.get('sec-fetch-site'); if (site && !['same-origin','same-site','none'].includes(site)) return json({ error:'Cross-site narration is not permitted.' },403);
+      let b; try{b=await request.json();}catch(_){return json({error:'Invalid JSON.'},400);}
+      const voice=safeVoiceId(b.voice); const scene=String(b.scene||'page').replace(/[^A-Za-z0-9_-]/g,'').slice(0,80)||'page'; const hash=await shortHash(String(b.text||'')); return tts(env,voice,b.text,`${scene}_${hash}`);
     }
     if (url.pathname === '/api/campaigns' && request.method === 'POST') {
       const user = await authFromRequest(request,env,url); if(!user) return json({error:'Authentication required.'},401);
-      const id = randId('c_').slice(0,18); const invite = randId('').slice(0,10).toUpperCase(); const h=new Headers({'x-chagidiel-user':user.uid,'x-chagidiel-contact':user.contact,'x-chagidiel-method':user.method,'content-type':'application/json'}); return campaignStub(env,id).fetch('https://campaign/init',{method:'POST',headers:h,body:JSON.stringify({id,invite})});
+      const id = randId('c_').slice(0,18); const invite = randId('').slice(0,10).toUpperCase();
+      const h=new Headers({'x-chagidiel-user':user.uid,'x-chagidiel-contact':user.contact,'x-chagidiel-method':user.method,'content-type':'application/json'});
+      const response = await campaignStub(env,id).fetch('https://campaign/init',{method:'POST',headers:h,body:JSON.stringify({id,invite})});
+      const data = await response.json();
+      if (response.ok) await authStub(env).fetch('https://auth/campaigns',{method:'POST',headers:{'x-chagidiel-user':user.uid,'content-type':'application/json'},body:JSON.stringify({campaignId:id})});
+      return json(data,response.status);
     }
     if (url.pathname === '/api/campaigns/join' && request.method === 'POST') {
-      const user = await authFromRequest(request,env,url); if(!user) return json({error:'Authentication required.'},401); const b=await request.json(); const id=String(b.campaignId||''); if(!/^c_[a-f0-9]+$/.test(id)) return json({error:'Invalid campaign id.'},400); return forwardCampaign(request,env,id,'/join',user,{invite:b.invite});
+      const user = await authFromRequest(request,env,url); if(!user) return json({error:'Authentication required.'},401);
+      const b=await request.json(); const id=String(b.campaignId||''); if(!validCampaignId(id)) return json({error:'Invalid campaign id.'},400);
+      const response = await forwardCampaign(request,env,id,'/join',user,{invite:b.invite});
+      const data = await response.json();
+      if (response.ok) await authStub(env).fetch('https://auth/campaigns',{method:'POST',headers:{'x-chagidiel-user':user.uid,'content-type':'application/json'},body:JSON.stringify({campaignId:id})});
+      return json(data,response.status);
     }
     const m = url.pathname.match(/^\/api\/campaigns\/(c_[a-f0-9]+)\/(state|action|ws)$/);
     if (m) {
       const user = await authFromRequest(request,env,url); if(!user) return json({error:'Authentication required.'},401); const id=m[1], op=m[2];
       if (op === 'ws') { const h=new Headers(request.headers); h.set('x-chagidiel-user',user.uid); h.set('x-chagidiel-contact',user.contact); h.set('x-chagidiel-method',user.method); return campaignStub(env,id).fetch('https://campaign/ws',{method:'GET',headers:h}); }
-      if (op === 'state') return forwardCampaign(request,env,id,'/state',user,null);
+      if (op === 'state') {
+        const response = await forwardCampaign(request,env,id,'/state',user,null);
+        if (response.ok) await authStub(env).fetch('https://auth/campaigns',{method:'POST',headers:{'x-chagidiel-user':user.uid,'content-type':'application/json'},body:JSON.stringify({campaignId:id})});
+        return response;
+      }
       if (op === 'action') { if(request.method!=='POST') return json({error:'Method not allowed.'},405); const b=await request.json(); return forwardCampaign(request,env,id,'/action',user,b); }
     }
     return env.ASSETS.fetch(request);

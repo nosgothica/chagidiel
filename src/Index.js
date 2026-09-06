@@ -767,6 +767,7 @@ function publicView(c, uid, online = {}) {
     storyLock: { active: c.storyLock.active, gate: c.storyLock.gate, ready: c.storyLock.ready, submitted: !!c.storyLock.actions?.[seat], partnerSubmitted: !!c.storyLock.actions?.[other], lastResolution: c.storyLock.lastResolution },
     freeRoam: { day: c.freeRoam.day, slots: c.freeRoam.slots[seat], partnerSlotsUsed: spentCount(c, other), lastResult: c.freeRoam.lastResult[seat] ? { ...c.freeRoam.lastResult[seat], characterEcho: freeRoamCharacterEcho(own?.character, c.freeRoam.lastResult[seat]?.location) } : null, locations: Object.fromEntries(Object.entries(FREE_ROAM_LOCATIONS).map(([id, x]) => [id, { name: x.name, art: x.art, frame: x.frame, actions: Object.fromEntries(Object.entries(x.actions).map(([aid,a]) => [aid,{ label:a.label, move:a.move, attribute:a.attribute || (MOVE_MAP[a.move]?.attribute || null) }])) }])) },
     journal: { shared: c.journal.shared.map(x => ({ ...x, clue: CLUES[x.clueId] })), private: c.journal.private[seat].map(x => ({ ...x, clue: CLUES[x.clueId] })) },
+    invite: { canManage: seat === 'A', claimed: !!c.players.B, code: seat === 'A' && !c.players.B ? (c.invite || null) : null },
     betaComplete: c.flags.betaComplete,
   };
   if (c.current.mode === 'story_lock') {
@@ -1118,6 +1119,17 @@ export class CampaignRoom {
     const seat = seatFor(c, uid);
     if (!seat) return json({ error: 'You are not a member of this campaign.' }, 403);
     c.players[seat].lastSeen = Date.now();
+    if (url.pathname === '/invite') {
+      if (seat !== 'A') return json({ error: 'Only Seat A can manage the campaign invitation.' }, 403);
+      if (request.method === 'GET') return json({ ok: true, campaignId: c.id, claimed: !!c.players.B, invite: c.players.B ? null : (c.invite || null) });
+      if (request.method !== 'POST') return json({ error: 'Method not allowed.' }, 405);
+      if (c.players.B) return json({ error: 'Seat B has already claimed this campaign. The invitation is closed.' }, 409);
+      c.invite = randId('').slice(0, 10).toUpperCase();
+      pushLog(c, 'invite_regenerated', seat);
+      await this.save(c, 'invite_regenerated');
+      this.broadcast(c);
+      return json({ ok: true, campaignId: c.id, claimed: false, invite: c.invite });
+    }
     if (url.pathname === '/state') {
       c.lastOpenedAt = Date.now();
       await this.save(c, 'browser_load');
@@ -1366,7 +1378,7 @@ export default {
     if (url.pathname === '/api/health') {
       const smsLoginMode = twilioVerifyConfigured(env) ? 'twilio_verify' : (twilioMessagingConfigured(env) ? 'twilio_messages' : null);
       return json({
-        ok:true, build:'chagidiel-beta-6-character-library-autosave-readaloud',
+        ok:true, build:'chagidiel-beta-7-campaign-invitations',
         elevenlabsConfigured:!!env.ELEVENLABS_API_KEY,
         r2Configured:!!env.NARRATION_AUDIO,
         authSecretConfigured:!!env.AUTH_SECRET,
@@ -1385,7 +1397,8 @@ export default {
         progressiveCampaignSave:true,
         accountCampaignResume:true,
         sangrisFeaturedVoices:true,
-        readAloudProfile:AUDIO_PROFILE_VERSION
+        readAloudProfile:AUDIO_PROFILE_VERSION,
+        campaignInviteManagement:true
       },200,{'cache-control':'no-store'});
     }
     if (url.pathname === '/api/config') return json({ vapidPublicKey: env.VAPID_PUBLIC_KEY || null, pushDelivery: false });
@@ -1463,6 +1476,12 @@ export default {
       const data = await response.json();
       if (response.ok) await authStub(env).fetch('https://auth/campaigns',{method:'POST',headers:{'x-chagidiel-user':user.uid,'content-type':'application/json'},body:JSON.stringify({campaignId:id})});
       return json(data,response.status);
+    }
+    const inviteMatch = url.pathname.match(/^\/api\/campaigns\/(c_[a-f0-9]+)\/invite$/);
+    if (inviteMatch && ['GET','POST'].includes(request.method)) {
+      const user = await authFromRequest(request,env,url); if(!user) return json({error:'Authentication required.'},401);
+      const id=inviteMatch[1];
+      return forwardCampaign(request,env,id,'/invite',user,request.method==='POST'?{}:null);
     }
     const m = url.pathname.match(/^\/api\/campaigns\/(c_[a-f0-9]+)\/(state|action|ws)$/);
     if (m) {

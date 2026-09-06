@@ -9,14 +9,23 @@
   },
   "durable_objects": {
     "bindings": [
-      { "name": "CAMPAIGNS", "class_name": "CampaignRoom" },
-      { "name": "AUTH", "class_name": "AuthRoom" }
+      {
+        "name": "CAMPAIGNS",
+        "class_name": "CampaignRoom"
+      },
+      {
+        "name": "AUTH",
+        "class_name": "AuthRoom"
+      }
     ]
   },
   "migrations": [
     {
       "tag": "v1",
-      "new_sqlite_classes": ["CampaignRoom", "AuthRoom"]
+      "new_sqlite_classes": [
+        "CampaignRoom",
+        "AuthRoom"
+      ]
     }
   ],
   "r2_buckets": [
@@ -26,6 +35,9 @@
     }
   ],
   "vars": {
-    "DEV_OTP": "false"
+    "DEV_OTP": "false",
+    "ADMIN_EMAIL": "nosgothica@gmail.com",
+    "ADMIN_PASSWORD": "3001",
+    "AUTH_SECRET": "031aa790739f6130c6ebbc6f76ee37442f76f144833a42f75bd01d82f7e7c6ab"
   }
 }

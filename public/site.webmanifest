@@ -1,0 +1,11 @@
+{
+  "name": "Chagidiel - KULT: The Black Madonna",
+  "short_name": "Chagidiel",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#050505",
+  "theme_color": "#050505",
+  "icons": [
+    {"src":"/media/ui/motifs/kult_winged_emblem_red.png","sizes":"any","type":"image/png","purpose":"any maskable"}
+  ]
+}

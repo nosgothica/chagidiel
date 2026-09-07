@@ -479,7 +479,7 @@ function playerRecord(creator) {
 function newCampaign(id, invite, creator, name = '', testMode = false) {
   testMode = !!testMode;
   return {
-    version: 6,
+    version: 7,
     testMode,
     id,
     name: String(name || '').trim().slice(0,80) || `Black Madonna — ${String(id || '').slice(-6).toUpperCase()}`,
@@ -491,7 +491,7 @@ function newCampaign(id, invite, creator, name = '', testMode = false) {
     players: { A: playerRecord(creator), B: null, C: null },
     relationships: {},
     current: { mode: 'lobby', scene: 'setup', beat: 0 },
-    storyLock: { gate: null, active: false, ready: blankReady(), actions: {}, participants: [], lastResolution: null },
+    storyLock: { gate: null, active: false, ready: blankReady(), actions: {}, participants: [], lastResolution: null, turn: null },
     freeRoam: { day: '17 September 1991', slots: { A:[null,null,null], B:[null,null,null], C:[null,null,null] }, lastResult: blankSeatState() },
     journal: { shared: [], private: { A:[], B:[], C:[] } },
     flags: { goldPlaqueDone:false, ambushDone:false, pogodinAvailable:false, betaComplete:false, marked:{A:false,B:false,C:false}, infection:{A:false,B:false,C:false} },
@@ -501,7 +501,7 @@ function newCampaign(id, invite, creator, name = '', testMode = false) {
 }
 function ensureCampaignShape(c) {
   if (!c) return c;
-  c.version = Math.max(6, Number(c.version || 1));
+  c.version = Math.max(7, Number(c.version || 1));
   c.testMode = !!c.testMode;
   if (!c.name) c.name = `Black Madonna — ${String(c.id || '').slice(-6).toUpperCase()}`;
   c.players = c.players || {};
@@ -520,6 +520,18 @@ function ensureCampaignShape(c) {
   c.storyLock.ready = { ...blankReady(), ...(c.storyLock.ready || {}) };
   c.storyLock.actions = c.storyLock.actions || {};
   c.storyLock.participants = Array.isArray(c.storyLock.participants) ? c.storyLock.participants.filter(x => SEATS.includes(x)) : [];
+  if (c.current?.mode === 'story_lock' && c.storyLock.active && c.storyLock.participants.length && !c.storyLock.turn) c.storyLock.turn = makeInitiativeState(c, c.storyLock.participants);
+  if (c.storyLock.turn) {
+    const t=c.storyLock.turn;
+    t.order=Array.isArray(t.order)?t.order.filter(st=>c.storyLock.participants.includes(st)&&c.players?.[st]?.character):[];
+    if (!t.order.length && c.storyLock.participants.length) c.storyLock.turn=makeInitiativeState(c,c.storyLock.participants);
+    else {
+      t.initiative=t.initiative||{}; t.index=Math.max(0,Math.min(t.order.length-1,Number(t.index||0)));
+      t.round=Math.max(1,Number(t.round||Number(c.current?.beat||0)+1));
+      t.usedChoices=Array.isArray(t.usedChoices)?t.usedChoices:[]; t.responses=Array.isArray(t.responses)?t.responses:[];
+      t.lastResponse=t.lastResponse||null; t.currentSeat=t.order[t.index]||null;
+    }
+  }
   if (c.storyLock.lastResolution) {
     const lr = c.storyLock.lastResolution;
     lr.pending = lr.pending !== false;
@@ -613,6 +625,74 @@ function requiredSeatsForGate(c, requirement) {
   if (requirement === 'full_party') return eligible;
   return [];
 }
+function initiativeRoll(c, seat) {
+  const reflexes=attrValue(c.players?.[seat]?.character,'reflexes');
+  const r=roll2d10(reflexes);
+  return { seat, dice:r.dice, modifier:reflexes, total:r.total };
+}
+function makeInitiativeState(c, participants) {
+  const eligible=(participants||[]).filter(st=>c.players?.[st]?.character);
+  const rolls=eligible.map(st=>initiativeRoll(c,st)).sort((a,b)=>b.total-a.total || b.modifier-a.modifier || a.seat.localeCompare(b.seat));
+  const initiative=Object.fromEntries(rolls.map(r=>[r.seat,r]));
+  const order=rolls.map(r=>r.seat);
+  return { order, initiative, index:0, currentSeat:order[0]||null, round:Number(c.current?.beat||0)+1, usedChoices:[], responses:[], lastResponse:null };
+}
+function resetInitiativeBeat(c) {
+  const t=c.storyLock.turn || makeInitiativeState(c,c.storyLock.participants||[]);
+  const order=(t.order||[]).filter(st=>(c.storyLock.participants||[]).includes(st)&&c.players?.[st]?.character);
+  c.storyLock.turn={ order, initiative:t.initiative||{}, index:0, currentSeat:order[0]||null, round:Number(c.current?.beat||0)+1, usedChoices:[], responses:[], lastResponse:null };
+}
+function activeTurnSeat(c) { return c.storyLock?.turn?.order?.[Number(c.storyLock?.turn?.index||0)] || null; }
+function availableTurnChoices(c, seat) {
+  const used=new Set(c.storyLock?.turn?.usedChoices||[]);
+  return lockChoices(c,seat).filter(choice=>choice.repeatable===true || !used.has(choice.id));
+}
+function immediateTurnResponse(c, seat, action) {
+  const name=c.players?.[seat]?.character?.name || 'Someone';
+  const id=action?.id||'';
+  const lines={
+    mingle:`${name} lets the reception carry them from one knot of conversation to the next. Faces acquire names, alliances, irritations, and histories; the room becomes less anonymous with every exchange.`,
+    stay_together:`${name} stays near the people they came in with, listening more than performing. The choice makes small reactions easier to notice and gives the group a quiet point of return amid the reception.`,
+    work_room:`${name} turns professional introductions into something useful. Publishers, officials, writers, and intermediaries begin attaching themselves to reputations that may matter later.`,
+    watch_exits:`${name} keeps attention on doors, staff, coats, and departures. Nothing is wrong yet, but the room develops a rhythm—and rhythms make interruptions easier to recognize.`,
+    approach_magda:`${name} starts toward Magda before the moment can close. Magda notices the movement almost at once; the three men beside her notice it too, and their response is nothing like ordinary social discomfort.`,
+    watch_russians:`${name} watches the three men instead of looking away. A glass slips in one hand, another man reaches for a handkerchief, and all three keep checking the same part of the room as if confirming a threat.`,
+    identify_filip:`${name} searches memory for the exhausted man's face and finds a name: Filip Kramer. The recognition explains who he is, but not why recognition seems to terrify him in return.`,
+    hang_back:`${name} stays out of the exchange and lets body language answer first. Magda looks confused. The men look afraid. Whatever is passing between them, she is not the one controlling it.`,
+    ask_nightmares:`${name} asks Magda to stop speaking around the dream and describe it. She goes still before answering: childhood, punishment, a locked darkness, something moving nearby, and pain that breaks the memory into pieces.`,
+    ask_men:`${name} asks who the three men were. Magda names Anton Mahler, Aleksandr “Sasha” Pogodin, and Filip Kramer—friends from her youth whose return to her life has brought more unease than comfort.`,
+    reassure:`${name} shifts the conversation away from questions and toward concern. Magda admits she came back from Berlin hoping Hamburg would let her sleep, and that what frightens her most is being told there is nothing wrong.`,
+    follow_russians:`${name} leaves the conversation before the three men can disappear. They do not linger outside; their departure has the efficiency of people who agreed that remaining near this room was dangerous.`,
+    cover:`${name} moves for cover before trying to understand everything at once. The decision sacrifices a clean view of the street but forces the attackers to adjust their angles.`,
+    protect:`${name} moves toward the nearest exposed companion instead of taking the safest line alone. The choice costs distance but makes it harder for the attackers to isolate anyone.`,
+    observe:`${name} looks past the first burst of danger long enough to find the useful details: the running Dodge, the shooters' spacing, and the route they mean to use if the attack turns against them.`,
+    return_fire:`${name} answers violence with violence. The attackers expected frightened targets; return fire forces them to remember that they can be hurt.`,
+    rush_van:`${name} closes distance on the Dodge before the crew can reposition. For several seconds the attackers have to choose between continuing the job and protecting their way out.`,
+    escape:`${name} chooses survival over a clean answer and breaks the geometry of the ambush. The attackers cannot keep a firing line without exposing themselves to witnesses.`,
+    suppress:`${name} keeps pressure on the attackers long enough to create movement where there was none. Their advance stalls and attention begins shifting toward the van.`,
+    disable_van:`${name} goes after the vehicle rather than the men. Even partial damage threatens to make their retreat louder, slower, and much less controlled.`,
+    take_prisoner:`${name} tries to turn one attacker into an answer. The attempt forces the others to close ranks around their own man instead of finishing the attack cleanly.`,
+    surveil:`${name} studies the estate before asking it to reveal anything. Guard changes, blind spots, and routines slowly turn wealth and security into a pattern that can be used.`,
+    sneak:`${name} chooses the quiet way in, using the estate's size against the people paid to control it. Every closed door becomes a question of timing rather than permission.`,
+    bluff:`${name} approaches through the front of the problem with a story already prepared. Confidence buys time, but every second inside the cover story raises the price of being discovered.`,
+    wait:`${name} lets the Inner Circle settle before moving. Patience reduces traffic through the house and increases the chance that the people who matter are already below.`,
+    rescue:`${name} stops treating the prisoners as background to the investigation. Helping them costs time and makes silence harder, but it also changes what the night is allowed to sacrifice.`,
+    temple:`${name} pushes toward the ritual space before the house can fully react. Symbols, heat, and voices grow stronger as the domestic architecture gives way to something built for another purpose.`,
+    chaos:`${name} creates trouble above to pull attention away from below. The diversion is messy enough to make the guards uncertain which emergency is the real one.`,
+    police:`${name} tries to make the outside world matter. Calls, names, and official pressure begin moving toward the estate, even if the people inside have spent years learning how to survive ordinary scrutiny.`,
+    perform_ritual:`${name} commits to the rite. The words and geometry answer with a depth the basement cannot physically contain, and the darkness beyond it begins to feel occupied.`,
+    rescue_first:`${name} refuses to let the prisoners become acceptable losses. The ritual loses the clean timing its designers expected as living people are moved out of its reach.`,
+    destroy:`${name} attacks the structure of the rite itself—symbols, materials, sequence—turning certainty into interruption.`,
+    withdraw:`${name} refuses the promise that one more step will make everything comprehensible. Leaving does not solve the problem, but it denies the room the decision it was built to extract.`
+  };
+  const text=[lines[id]||`${name} commits to the choice, and the room answers.`];
+  const r=action?.roll;
+  if (r?.outcome==='complete') text.push('The timing is right. The choice creates room for whatever comes next.');
+  else if (r?.outcome==='complication') text.push('It works, but not cleanly. Something in the situation shifts against the group as the next person moves.');
+  else if (r?.outcome==='failure') text.push('The attempt costs more than intended, and the situation tightens around everyone still inside it.');
+  return { seat, name, actionId:id||null, label:action?.label||'', roll:r||null, text, at:Date.now() };
+}
+
 function cleanArrayText(value, maxItems = 4, maxLen = 220) {
   return Array.isArray(value) ? value.slice(0, maxItems).map(x => String(x || '').slice(0, maxLen)) : [];
 }
@@ -700,7 +780,7 @@ function nextSlot(c, seat) { return c.freeRoam.slots[seat].findIndex(x => !x); }
 function storyGate(c, scene, forced = false) {
   const requirement = storyRequirement(scene);
   c.current = { mode: 'story_gate', scene, beat: 0 };
-  c.storyLock = { gate: { scene, forced, requirement, requiredSeats: requiredSeatsForGate(c, requirement), acknowledged: blankReady() }, active: false, ready: blankReady(), actions: {}, participants: [], lastResolution: null };
+  c.storyLock = { gate: { scene, forced, requirement, requiredSeats: requiredSeatsForGate(c, requirement), acknowledged: blankReady() }, active: false, ready: blankReady(), actions: {}, participants: [], lastResolution: null, turn: null };
 }
 function activateStory(c, scene, participants = null) {
   const eligible = occupiedSeats(c, true);
@@ -711,6 +791,8 @@ function activateStory(c, scene, participants = null) {
   c.storyLock.actions = {};
   c.storyLock.participants = chosen;
   c.storyLock.lastResolution = null;
+  c.storyLock.turn = makeInitiativeState(c, chosen);
+  pushLog(c,'initiative_rolled',null,{scene,order:c.storyLock.turn.order,initiative:c.storyLock.turn.initiative});
 }
 function finishStory(c, nextMode = 'free_roam') {
   c.storyLock.active = false;
@@ -719,6 +801,7 @@ function finishStory(c, nextMode = 'free_roam') {
   c.storyLock.participants = [];
   c.storyLock.gate = null;
   c.storyLock.lastResolution = null;
+  c.storyLock.turn = null;
   if (nextMode === 'free_roam') c.current = { mode: 'free_roam', scene: 'berlin_free_roam', beat: 0 };
 }
 
@@ -915,7 +998,7 @@ function sharedStoryText(c) {
   const s = c.current.scene, b = c.current.beat;
   if (s === 'gold_plaque') {
     if (b === 0) return {
-      kicker: 'Hamburg Rathaus · 14 September 1991 · 20:00',
+      kicker: 'Hamburg Rathaus · 14 September 1991 · 8:00 PM',
       title: 'The Gold Plaque',
       context: 'For the moment, this is only a formal evening in a newly reunified Germany: speeches, professional obligations, expensive clothes, and people pretending not to be bored.',
       speaker: { name: 'A Rathaus steward', line: 'The ballroom is open. Dinner will begin shortly.' },
@@ -1229,14 +1312,14 @@ function publicView(c, uid, online = {}) {
     relationshipTypes:RELATIONSHIP_TYPES,
     current:c.current,
     flags:{ ...c.flags, marked:{ self:!!c.flags.marked[seat], partnerKnown:false }, infection:{ self:!!c.flags.infection[seat] } },
-    storyLock:{ active:c.storyLock.active, gate:c.storyLock.gate, ready:c.storyLock.ready, participants:c.storyLock.participants || [], participating:participant, submitted:!!c.storyLock.actions?.[seat], submissions:Object.fromEntries(SEATS.map(st=>[st,!!c.storyLock.actions?.[st]])), resolutionPending, resolutionAcknowledged:!!c.storyLock.lastResolution?.acknowledged?.[seat], resolution:resolutionPending?resolutionPresentation(c,seat,c.storyLock.lastResolution):null },
+    storyLock:{ active:c.storyLock.active, gate:c.storyLock.gate, ready:c.storyLock.ready, participants:c.storyLock.participants || [], participating:participant, submitted:!!c.storyLock.actions?.[seat], submissions:Object.fromEntries(SEATS.map(st=>[st,!!c.storyLock.actions?.[st]])), turn:c.storyLock.turn?{order:[...(c.storyLock.turn.order||[])],initiative:{...(c.storyLock.turn.initiative||{})},index:Number(c.storyLock.turn.index||0),currentSeat:activeTurnSeat(c),round:Number(c.storyLock.turn.round||1),usedChoices:[...(c.storyLock.turn.usedChoices||[])],lastResponse:c.storyLock.turn.lastResponse||null}:null, resolutionPending, resolutionAcknowledged:!!c.storyLock.lastResolution?.acknowledged?.[seat], resolution:resolutionPending?resolutionPresentation(c,seat,c.storyLock.lastResolution):null },
     freeRoam:{ day:c.freeRoam.day, slots:c.freeRoam.slots[seat], partySlotsUsed:Object.fromEntries(otherSeats(c,seat).map(st=>[st,spentCount(c,st)])), partnerSlotsUsed:other?spentCount(c,other):0, lastResult:c.freeRoam.lastResult[seat] ? { ...c.freeRoam.lastResult[seat], characterEcho:freeRoamCharacterEcho(own?.character,c.freeRoam.lastResult[seat]?.location) } : null, locations:Object.fromEntries(Object.entries(FREE_ROAM_LOCATIONS).map(([id,x])=>[id,{name:x.name,art:x.art,frame:x.frame,actions:Object.fromEntries(Object.entries(x.actions).map(([aid,a])=>[aid,{label:a.label,move:a.move,attribute:a.attribute || (MOVE_MAP[a.move]?.attribute || null)}]))}])) },
     journal:{ shared:c.journal.shared.map(x=>({...x,clue:CLUES[x.clueId]})), private:c.journal.private[seat].map(x=>({...x,clue:CLUES[x.clueId]})) },
     invite:{ canManage:seat==='A'&&!c.testMode, disabledReason:c.testMode?'Single-player admin test campaigns do not accept invitations.':null, seats:{ B:{claimed:!!c.players.B,code:seat==='A'&&!c.testMode&&!c.players.B?(c.invites?.B || null):null}, C:{claimed:!!c.players.C,code:seat==='A'&&!c.testMode&&!c.players.C?(c.invites?.C || null):null} } },
     betaComplete:c.flags.betaComplete,
     capabilities:{ campaignReset:seat==='A', notifications:true, mobileNav:true, adminSinglePlayerTest:!!c.testMode },
   };
-  if (c.current.mode === 'story_lock' && participant && !resolutionPending) { base.story = personalizeStory(c,seat,sharedStoryText(c)); base.choices = c.storyLock.actions?.[seat] ? [] : lockChoices(c,seat); }
+  if (c.current.mode === 'story_lock' && participant && !resolutionPending) { base.story = personalizeStory(c,seat,sharedStoryText(c)); base.choices = activeTurnSeat(c)===seat ? availableTurnChoices(c,seat) : []; }
   return base;
 }
 
@@ -1849,26 +1932,39 @@ export class CampaignRoom {
       } else if (b.type === 'story_gate_cancel') {
         if (c.current.mode === 'story_gate' && !c.storyLock.gate?.forced) c.storyLock.ready[seat] = false;
       } else if (b.type === 'lock_action') {
-        if (c.current.mode !== 'story_lock' || !(c.storyLock.participants || []).includes(seat)) return json({ error:'Your protagonist is not participating in this Story Lock.' },409);
-        if (storyResolutionReady(c)) return json({ error:'The previous choice has already resolved. Read the consequence and continue before choosing again.' },409);
-        if (c.storyLock.actions[seat]) return json({ error:'Your action is already locked.' },409);
-        const allowed=lockChoices(c,seat), selected=allowed.find(x=>x.id===b.actionId); if (!selected) return json({ error:'That action is not available.' },400);
+        if (c.current.mode !== 'story_lock' || !(c.storyLock.participants || []).includes(seat)) return json({ error:'Your character is not part of this scene.' },409);
+        if (storyResolutionReady(c)) return json({ error:'The beat has resolved. Read the consequence and continue before another action.' },409);
+        if (!c.storyLock.turn) c.storyLock.turn=makeInitiativeState(c,c.storyLock.participants||[]);
+        const active=activeTurnSeat(c);
+        if (active!==seat) return json({ error:`It is ${c.players?.[active]?.character?.name || 'someone else'}'s turn.` },409);
+        if (c.storyLock.actions[seat]) return json({ error:'Your action for this beat is already complete.' },409);
+        const allowed=availableTurnChoices(c,seat), selected=allowed.find(x=>x.id===b.actionId); if (!selected) return json({ error:'That action is no longer available.' },400);
         let roll=null;
         if (selected.move==='improvised') { const modifier=attrValue(c.players[seat].character,selected.attribute); roll={move:'Improvised Move',attribute:selected.attribute,...roll2d10(modifier)}; }
         else if (selected.move) roll=rollFor(c.players[seat].character,selected.move);
-        c.storyLock.actions[seat]={ id:selected.id,label:selected.label,move:selected.move || null,roll };
-        pushLog(c,'joint_action_submitted',seat,{scene:c.current.scene,beat:c.current.beat,action:selected.id,roll});
-        const participants=(c.storyLock.participants || []).filter(st=>c.players[st]?.character);
-        const minimumSubmissions=c.testMode?1:2;
-        const allSubmitted=participants.length>=minimumSubmissions && participants.every(st=>!!c.storyLock.actions[st]);
-        if (allSubmitted) {
-          const scene=c.current.scene, beat=Number(c.current.beat || 0);
-          const resolution=resolveJoint(c,c.storyLock.actions), rolls=Object.fromEntries(participants.map(st=>[st,c.storyLock.actions[st].roll]));
-          if (scene==='ambush') for (const st of participants) if (rolls[st]?.outcome==='failure'&&!c.players[st].character.wounds.includes('Serious Wound')) c.players[st].character.wounds.push('Serious Wound');
-          c.storyLock.lastResolution={ pending:true, scene, beat, text:resolution, actions:Object.fromEntries(participants.map(st=>[st,c.storyLock.actions[st]])), participants:[...participants], acknowledged:blankReady(), at:Date.now() };
-          c.storyLock.actions={};
-          pushLog(c,'joint_action_resolved',null,{scene,beat,rolls,participants});
-        } else for (const st of participants.filter(x=>x!==seat)) if (!c.storyLock.actions[st]&&!this.presence()[st]) await safeNotify(this.env,c.players[st],'Your decision is required in the current Story Lock.');
+        const action={ id:selected.id,label:selected.label,move:selected.move || null,roll,repeatable:selected.repeatable===true };
+        c.storyLock.actions[seat]=action;
+        if (!action.repeatable && !c.storyLock.turn.usedChoices.includes(action.id)) c.storyLock.turn.usedChoices.push(action.id);
+        const response=immediateTurnResponse(c,seat,action);
+        c.storyLock.turn.lastResponse=response;
+        c.storyLock.turn.responses.push(response);
+        if (c.storyLock.turn.responses.length>12) c.storyLock.turn.responses=c.storyLock.turn.responses.slice(-12);
+        if (c.current.scene==='ambush' && roll?.outcome==='failure' && !c.players[seat].character.wounds.includes('Serious Wound')) c.players[seat].character.wounds.push('Serious Wound');
+        pushLog(c,'turn_action_resolved',seat,{scene:c.current.scene,beat:c.current.beat,action:selected.id,roll,initiativeIndex:c.storyLock.turn.index});
+        const order=(c.storyLock.turn.order||[]).filter(st=>(c.storyLock.participants||[]).includes(st)&&c.players?.[st]?.character);
+        const isLast=c.storyLock.turn.index>=order.length-1;
+        if (isLast) {
+          const scene=c.current.scene, beat=Number(c.current.beat||0), participants=[...order];
+          const resolution=resolveJoint(c,c.storyLock.actions);
+          c.storyLock.lastResolution={ pending:true, scene, beat, text:resolution, actions:Object.fromEntries(participants.map(st=>[st,c.storyLock.actions[st]])), participants, acknowledged:blankReady(), at:Date.now() };
+          pushLog(c,'initiative_round_resolved',null,{scene,beat,participants,order});
+        } else {
+          c.storyLock.turn.index+=1;
+          c.storyLock.turn.currentSeat=activeTurnSeat(c);
+          const next=c.storyLock.turn.currentSeat;
+          pushLog(c,'initiative_turn_advanced',null,{scene:c.current.scene,beat:c.current.beat,next});
+          if (next && !this.presence()[next]) await safeNotify(this.env,c.players[next],`It is ${c.players[next]?.character?.name || 'your character'}'s turn in the current scene.`);
+        }
       } else if (b.type === 'story_resolution_continue') {
         const lr=c.storyLock.lastResolution;
         if (c.current.mode!=='story_lock' || !lr?.pending) return json({error:'There is no resolved story beat waiting to continue.'},409);
@@ -1884,6 +1980,7 @@ export class CampaignRoom {
             c.current={mode:'story_lock',scene,beat:beat+1};
             c.storyLock.lastResolution=null;
             c.storyLock.actions={};
+            resetInitiativeBeat(c);
           } else if (scene==='gold_plaque') {
             c.flags.goldPlaqueDone=true; for (const st of participants) c.flags.infection[st]=true; finishStory(c);
           } else if (scene==='ambush') {
@@ -1891,7 +1988,7 @@ export class CampaignRoom {
           } else if (scene==='pogodin') {
             const performers=participants.filter(st=>lr.actions?.[st]?.id==='perform_ritual');
             for (const st of performers) c.flags.marked[st]=true;
-            c.flags.betaComplete=true; c.phase='beta_complete'; c.current={mode:'epilogue',scene:'chapter1_boundary',beat:0}; c.storyLock.active=false; c.storyLock.actions={}; c.storyLock.participants=[]; c.storyLock.lastResolution=null;
+            c.flags.betaComplete=true; c.phase='beta_complete'; c.current={mode:'epilogue',scene:'chapter1_boundary',beat:0}; c.storyLock.active=false; c.storyLock.actions={}; c.storyLock.participants=[]; c.storyLock.lastResolution=null; c.storyLock.turn=null;
           }
           pushLog(c,'story_beat_advanced',null,{scene,beat,finalBeat,participants});
         }
@@ -2100,7 +2197,7 @@ export default {
     if (url.pathname === '/api/health') {
       const smsLoginMode = twilioVerifyConfigured(env) ? 'twilio_verify' : (twilioMessagingConfigured(env) ? 'twilio_messages' : null);
       return json({
-        ok:true, build:'black-madonna-beta-12.4-immersive-narration',
+        ok:true, build:'black-madonna-beta-12.6-initiative-hires-media',
         elevenlabsConfigured:!!elevenKeyInfo(env).key,
         elevenlabsBinding:elevenKeyInfo(env).binding,
         kultElevenlabsConfigured:!!env.KULT_ELEVENLABS_API_KEY,
@@ -2144,7 +2241,13 @@ export default {
         narrativeFlowRewrite:true,
         freeRoamRendererRestored:true,
         immersiveNarration:true,
-        personalObservationFirst:true
+        personalObservationFirst:true,
+        narrationTextHighlight:true,
+        twelveHourClock:true,
+        initiativeStoryLocks:true,
+        sharedTurnResponses:true,
+        consumedSharedChoices:true,
+        highResolutionMediaArtwork:true
       },200,{'cache-control':'no-store'});
     }
     if (url.pathname === '/api/config') return json({ vapidPublicKey: env.VAPID_PUBLIC_KEY || null, pushDelivery: false });

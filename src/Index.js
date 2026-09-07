@@ -1,9 +1,9 @@
 const DEFAULT_VOICE_ID = '54YYBuRuAG6KJooiOhFI';
-const MODEL_ID = 'eleven_multilingual_v2';
+const MODEL_ID = 'eleven_v3_conversational';
 const OUTPUT_FORMAT = 'mp3_44100_128';
 const ELEVEN_BASE = 'https://api.elevenlabs.io';
-const AUDIO_PROFILE_VERSION = 'chagidiel-beta-10-sangris-visible-page-v1';
-const VOICE_SETTINGS = { stability: 0.64, similarity_boost: 0.82, style: 0.0, use_speaker_boost: true, speed: 1.0 };
+const AUDIO_PROFILE_VERSION = 'black-madonna-beta-12.2-v3-conversational-stream-v1';
+const VOICE_SETTINGS = { stability: 0.5, speed: 1.0 };
 
 // Keep the same featured ElevenLabs choices used by the current Sangris build.
 // All additional voices saved to the connected ElevenLabs account are returned too.
@@ -1838,7 +1838,7 @@ async function listVoices(env) {
 }
 async function narrationDiagnostics(env) {
   const info=elevenKeyInfo(env);
-  const out={configured:!!info.key,binding:info.binding,r2Configured:!!env.NARRATION_AUDIO,elevenlabsOk:false,status:null,detail:null};
+  const out={configured:!!info.key,binding:info.binding,r2Configured:!!env.NARRATION_AUDIO,elevenlabsOk:false,status:null,detail:null,model:MODEL_ID,streaming:true};
   if(!info.key){out.detail='No ElevenLabs secret was found. Add KULT_ELEVENLABS_API_KEY to this Worker as a Cloudflare Secret.';return out;}
   try{
     const r=await fetch(`${ELEVEN_BASE}/v2/voices?page_size=1&include_total_count=false`,{headers:{'xi-api-key':info.key}});
@@ -1868,7 +1868,7 @@ async function elevenTTSWithRetry(url, options) {
   }
   return last;
 }
-async function tts(env, voiceId, text, cacheKey) {
+async function tts(env, voiceId, text, cacheKey, ctx) {
   const apiKey=elevenKeyInfo(env).key;
   if (!apiKey) return json({ error:'KULT ElevenLabs narration is not configured. Add KULT_ELEVENLABS_API_KEY to this Worker as a Cloudflare Secret.' },503);
   if (!env.NARRATION_AUDIO) return json({ error: 'Narration R2 binding is not configured.' }, 503);
@@ -1881,12 +1881,30 @@ ${voiceId}
 ${cleaned}`);
   const objectKey = `chagidiel/${voiceId}/${cacheKey}_${version}.mp3`;
   const cached = await env.NARRATION_AUDIO.get(objectKey);
-  if (cached) { const h = new Headers(); cached.writeHttpMetadata(h); h.set('content-type','audio/mpeg'); h.set('x-narration-cache','HIT'); return new Response(cached.body,{headers:h}); }
-  const r = await elevenTTSWithRetry(`${ELEVEN_BASE}/v1/text-to-speech/${encodeURIComponent(voiceId)}?output_format=${OUTPUT_FORMAT}`, { method:'POST', headers:{'xi-api-key':apiKey,'content-type':'application/json',accept:'audio/mpeg'}, body:JSON.stringify({text:cleaned,model_id:MODEL_ID,voice_settings:VOICE_SETTINGS}) });
+  if (cached) {
+    const h = new Headers();
+    cached.writeHttpMetadata(h);
+    h.set('content-type','audio/mpeg');
+    h.set('cache-control','private, max-age=31536000');
+    h.set('content-length',String(cached.size || 0));
+    h.set('x-narration-cache','HIT');
+    h.set('x-narration-model',MODEL_ID);
+    h.set('x-narration-stream','1');
+    return new Response(cached.body,{headers:h});
+  }
+  const r = await elevenTTSWithRetry(`${ELEVEN_BASE}/v1/text-to-speech/${encodeURIComponent(voiceId)}/stream?output_format=${OUTPUT_FORMAT}`, { method:'POST', headers:{'xi-api-key':apiKey,'content-type':'application/json',accept:'audio/mpeg'}, body:JSON.stringify({text:cleaned,model_id:MODEL_ID,voice_settings:VOICE_SETTINGS}) });
   if (!r?.ok) return json({ error:'ElevenLabs generation failed.', status:r?.status || 502, detail:r ? (await r.text()).slice(0,500) : 'No response from ElevenLabs.' },502);
+  const headers=new Headers({'content-type':'audio/mpeg','cache-control':'private, max-age=31536000','x-narration-cache':'MISS','x-narration-model':MODEL_ID,'x-narration-stream':'1'});
+  if (r.body && typeof r.body.tee === 'function') {
+    const [clientStream,cacheStream]=r.body.tee();
+    const cacheJob=(async()=>{const audio=await new Response(cacheStream).arrayBuffer();if(audio.byteLength)await env.NARRATION_AUDIO.put(objectKey,audio,{httpMetadata:{contentType:'audio/mpeg'}})})();
+    if(ctx?.waitUntil)ctx.waitUntil(cacheJob.catch(()=>{}));else await cacheJob.catch(()=>{});
+    return new Response(clientStream,{headers});
+  }
   const audio = await r.arrayBuffer();
   await env.NARRATION_AUDIO.put(objectKey,audio,{httpMetadata:{contentType:'audio/mpeg'}});
-  return new Response(audio,{headers:{'content-type':'audio/mpeg','cache-control':'private, max-age=31536000','x-narration-cache':'MISS'}});
+  headers.set('content-length',String(audio.byteLength));
+  return new Response(audio,{headers});
 }
 
 function campaignStub(env, id) { return env.CAMPAIGNS.get(env.CAMPAIGNS.idFromName(id)); }
@@ -1905,12 +1923,12 @@ async function forwardCampaign(request, env, id, path, user, body = null) {
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
     if (url.pathname === '/api/health') {
       const smsLoginMode = twilioVerifyConfigured(env) ? 'twilio_verify' : (twilioMessagingConfigured(env) ? 'twilio_messages' : null);
       return json({
-        ok:true, build:'black-madonna-beta-12-mobile-icon-kult-audio',
+        ok:true, build:'black-madonna-beta-12.2-narration-progress-v3',
         elevenlabsConfigured:!!elevenKeyInfo(env).key,
         elevenlabsBinding:elevenKeyInfo(env).binding,
         kultElevenlabsConfigured:!!env.KULT_ELEVENLABS_API_KEY,
@@ -1946,6 +1964,9 @@ export default {
         presenceDropdown:true,
         legacyCatherineCleanup:true,
         sangrisNarrationBackend:true,
+        narrationModel:MODEL_ID,
+        narrationStreaming:true,
+        narrationProgress:true,
         adminSinglePlayerTestMode:true
       },200,{'cache-control':'no-store'});
     }
@@ -2033,7 +2054,7 @@ export default {
       const user = await authFromRequest(request, env, url); if (!user) return json({ error:'Authentication required.' },401);
       const site = request.headers.get('sec-fetch-site'); if (site && !['same-origin','same-site','none'].includes(site)) return json({ error:'Cross-site narration is not permitted.' },403);
       let b; try{b=await request.json();}catch(_){return json({error:'Invalid JSON.'},400);}
-      const voice=safeVoiceId(b.voice); const scene=String(b.scene||'page').replace(/[^A-Za-z0-9_-]/g,'').slice(0,80)||'page'; const hash=await shortHash(String(b.text||'')); return tts(env,voice,b.text,`${scene}_${hash}`);
+      const voice=safeVoiceId(b.voice); const scene=String(b.scene||'page').replace(/[^A-Za-z0-9_-]/g,'').slice(0,80)||'page'; const hash=await shortHash(String(b.text||'')); return tts(env,voice,b.text,`${scene}_${hash}`,ctx);
     }
     if (url.pathname === '/api/campaigns' && request.method === 'POST') {
       const user = await authFromRequest(request,env,url); if(!user) return json({error:'Authentication required.'},401);

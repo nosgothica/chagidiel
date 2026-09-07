@@ -2,7 +2,7 @@ const DEFAULT_VOICE_ID = '54YYBuRuAG6KJooiOhFI';
 const MODEL_ID = 'eleven_multilingual_v2';
 const OUTPUT_FORMAT = 'mp3_44100_128';
 const ELEVEN_BASE = 'https://api.elevenlabs.io';
-const AUDIO_PROFILE_VERSION = 'chagidiel-beta-9-reliable-readaloud-v2';
+const AUDIO_PROFILE_VERSION = 'chagidiel-beta-10-sangris-visible-page-v1';
 const VOICE_SETTINGS = { stability: 0.64, similarity_boost: 0.82, style: 0.0, use_speaker_boost: true, speed: 1.0 };
 
 // Keep the same featured ElevenLabs choices used by the current Sangris build.
@@ -476,12 +476,15 @@ function blankSeatState() { return { A:null, B:null, C:null }; }
 function playerRecord(creator) {
   return { uid: creator.uid, contact: creator.contact, method: creator.method, characterId: null, character: null, characterHistory: [], entry: null, lastSeen: Date.now(), prefs: { storyAlerts: true, evidenceAlerts: true }, backgroundEditUsed: false };
 }
-function newCampaign(id, invite, creator) {
+function newCampaign(id, invite, creator, name = '', testMode = false) {
+  testMode = !!testMode;
   return {
-    version: 3,
+    version: 5,
+    testMode,
     id,
+    name: String(name || '').trim().slice(0,80) || `Black Madonna — ${String(id || '').slice(-6).toUpperCase()}`,
     invite: null,
-    invites: { B: invite, C: randId('').slice(0,10).toUpperCase() },
+    invites: testMode ? { B:null, C:null } : { B: invite, C: randId('').slice(0,10).toUpperCase() },
     createdAt: Date.now(),
     revision: 1,
     phase: 'lobby',
@@ -498,7 +501,9 @@ function newCampaign(id, invite, creator) {
 }
 function ensureCampaignShape(c) {
   if (!c) return c;
-  c.version = Math.max(3, Number(c.version || 1));
+  c.version = Math.max(5, Number(c.version || 1));
+  c.testMode = !!c.testMode;
+  if (!c.name) c.name = `Black Madonna — ${String(c.id || '').slice(-6).toUpperCase()}`;
   c.players = c.players || {};
   if (!('C' in c.players)) c.players.C = null;
   for (const seat of SEATS) if (c.players[seat]) {
@@ -508,6 +513,7 @@ function ensureCampaignShape(c) {
   c.invites = c.invites || { B: c.players.B ? null : (c.invite || null), C: null };
   if (!('B' in c.invites)) c.invites.B = c.players.B ? null : (c.invite || null);
   if (!('C' in c.invites)) c.invites.C = null;
+  if (c.testMode) c.invites = { B:null, C:null };
   c.invite = null;
   c.relationships = c.relationships || {};
   c.storyLock = c.storyLock || {};
@@ -560,8 +566,9 @@ function resetCampaignProgress(c) {
     };
   }
   const creator = preserved.A || { uid:'', contact:'', method:'email' };
-  const fresh = newCampaign(c.id, c.invites?.B || randId('').slice(0,10).toUpperCase(), creator);
+  const fresh = newCampaign(c.id, c.invites?.B || randId('').slice(0,10).toUpperCase(), creator, c.name, c.testMode);
   fresh.createdAt = c.createdAt || now;
+  fresh.name = c.name || fresh.name;
   fresh.players = preserved;
   fresh.invites = {
     B: preserved.B ? null : (c.invites?.B || fresh.invites.B),
@@ -571,8 +578,8 @@ function resetCampaignProgress(c) {
   fresh.revision = originalRevision;
   fresh.resetAt = now;
   fresh.resetCount = Number(c.resetCount || 0) + 1;
-  const primaryReady = !!fresh.players.A?.character && !!fresh.players.B?.character;
-  const optionalReady = !fresh.players.C || !!fresh.players.C.character;
+  const primaryReady = fresh.testMode ? !!fresh.players.A?.character : (!!fresh.players.A?.character && !!fresh.players.B?.character);
+  const optionalReady = fresh.testMode ? true : (!fresh.players.C || !!fresh.players.C.character);
   if (primaryReady && optionalReady) { storyGate(fresh, 'gold_plaque', false); fresh.phase = 'chapter1'; }
   return fresh;
 }
@@ -592,6 +599,7 @@ function relationshipKey(a,b) { return [a,b].sort().join(':'); }
 function storyRequirement(scene) { return ['gold_plaque','pogodin'].includes(scene) ? 'full_party' : 'quorum_2'; }
 function requiredSeatsForGate(c, requirement) {
   const eligible = occupiedSeats(c, true);
+  if (c.testMode) return eligible.slice(0,1);
   if (requirement === 'full_party') return eligible;
   return [];
 }
@@ -816,16 +824,45 @@ function relationshipEcho(c, seat, scene) {
   if (scene === 'pogodin' && ['married','dating','engaged'].includes(type)) return `Whatever waits beneath Pogodin’s house, neither of you can pretend the other is expendable.`;
   return null;
 }
+function invitationEcho(character) {
+  if (!character) return null;
+  const occ = character.occupation;
+  const map = {
+    professor: 'The invitation reached you through the academic and literary world; a Gold Plaque dinner at the Rathaus is exactly the sort of professional obligation that can masquerade as an evening out.',
+    writer: 'The German Authors Association invitation is ordinary enough for your profession. The names on the guest list are useful, the ceremony less so.',
+    literary_agent: 'You are here because rooms full of writers, publishers, and patrons are part of the job. Half the evening is social ritual; the other half is business pretending not to be business.',
+    agent: 'You are here because rooms full of writers, publishers, and patrons are part of the job. Half the evening is social ritual; the other half is business pretending not to be business.',
+    bookseller: 'A client and an old literary acquaintance put your name on the guest list. Rare books have a way of making their dealers welcome in cultural rooms that would otherwise ignore them.',
+    journalist: 'An acquaintance in publishing secured the invitation. For a journalist, a crowded reception of authors, editors, and public figures is less a dinner than a directory with wine.',
+    diplomatic: 'Your professional circle provided the invitation. Cultural receptions are useful places to be seen, and still more useful places to notice who else wants to be seen.',
+    legionnaire: 'You are not here for the prize. A professional acquaintance needed another pair of reliable eyes around a prominent guest, which is enough to put you inside the Rathaus in evening dress.',
+    stasi: 'A former professional contact produced the invitation. In the new Germany, old networks have not vanished; they have simply learned to call themselves acquaintances.',
+    kgb: 'A contact with ties to the cultural circuit acquired your place at the dinner. Public literary events are good cover precisely because almost everyone has a plausible reason to be there.',
+    black_marketeer: 'A well-connected acquaintance put your name on the list. A room full of wealthy collectors, publishers, and people accustomed to private arrangements is worth seeing for yourself.'
+  };
+  return map[occ] || 'An acquaintance placed your name on the guest list. Whatever your profession, you have a plausible reason to be inside the Rathaus tonight.';
+}
+function partyHistoryEcho(c, seat) {
+  const character = c.players?.[seat]?.character;
+  if (!character) return null;
+  const rel = acceptedRelationships(c, seat)[0];
+  if (rel) return null;
+  const otherNames = otherSeats(c, seat, true).map(st => c.players?.[st]?.character?.name).filter(Boolean);
+  if (!otherNames.length) return null;
+  if (otherNames.length === 1) return `You and ${otherNames[0]} do not need a fabricated shared past. If you did not arrive together, a mutual acquaintance at the reception has already made the introduction, and the evening gives you time to decide what you make of one another.`;
+  return `You are not all old friends. Where prior relationships do not already connect the group, mutual acquaintances at the reception make the introductions. By the time dinner ends, ${otherNames.join(' and ')} are no longer anonymous faces in the crowd.`;
+}
 function personalizeStory(c, seat, shared) {
   const character = c.players?.[seat]?.character;
   if (!character || !shared) return shared;
-  const personal = [relationshipEcho(c, seat, c.current.scene), magdaEcho(character, c.current.scene), occupationEcho(character, c.current.scene), familyEcho(character, c.current.scene), darkSecretEcho(character, c.current.scene)].filter(Boolean);
+  const personal = [];
+  if (c.current.scene === 'gold_plaque' && c.current.beat === 0) {
+    personal.push(invitationEcho(character));
+    personal.push(partyHistoryEcho(c, seat));
+  }
+  personal.push(relationshipEcho(c, seat, c.current.scene), magdaEcho(character, c.current.scene), occupationEcho(character, c.current.scene), familyEcho(character, c.current.scene), darkSecretEcho(character, c.current.scene));
   if (c.players?.[seat]?.entry?.pending) personal.unshift(c.players[seat].entry.text);
-  if (!personal.length) return shared;
-  const text = [...shared.text];
-  const insertAt = Math.min(1, text.length);
-  text.splice(insertAt, 0, ...personal);
-  return { ...shared, text };
+  return { ...shared, personal: personal.filter(Boolean) };
 }
 function freeRoamCharacterEcho(character, location) {
   if (!character) return null;
@@ -844,20 +881,99 @@ function freeRoamCharacterEcho(character, location) {
 function sharedStoryText(c) {
   const s = c.current.scene, b = c.current.beat;
   if (s === 'gold_plaque') {
-    if (b === 0) return { kicker: 'Hamburg - 14 September 1991', title: 'The Gold Plaque', text: ['Rain makes the Rathaus windows shine like black mirrors. Inside, publishers, writers, minor celebrities, and people who want to be mistaken for all three move beneath chandeliers and vaulted ceilings.', 'For a few hours the evening is almost reassuringly ordinary. That is the first cruelty of it.'], art: null };
-    if (b === 1) return { kicker: 'Near Midnight', title: 'Late Arrivals', text: ['Four people enter late. You recognize Magda first. The three men with her are slower to place.', 'They see you. Whatever conversation they were having ends. One reaches for his glass and misses it the first time. Another has gone visibly pale.'], art: null };
-    return { kicker: 'The Dance', title: 'Magda', text: ['Up close, Magda looks older than memory permits. Her perfume is too strong. Her hands tremble when she removes her gloves.', 'She talks about Berlin, sleeplessness, and dreams she cannot hold onto after waking. She touches each of you with the unconscious insistence of someone afraid of being left alone.'], art: null };
+    if (b === 0) return {
+      kicker: 'Hamburg Rathaus · 14 September 1991 · 20:00',
+      title: 'The Gold Plaque',
+      context: 'The German Authors Association has filled Hamburg’s Rathaus with writers, publishers, patrons, officials, and people who have learned how to look comfortable among them.',
+      speaker: { name: 'A Rathaus steward', line: 'The ballroom is open. Dinner will begin shortly.' },
+      text: [
+        'Outside, a wet September evening turns the windows black. Inside the main lobby, umbrellas disappear into cloakrooms while prominent authors and publishers exchange names beneath stone arches. If you did not arrive with the other protagonists, introductions happen naturally through the overlapping acquaintances that brought each of you here.',
+        'At eight, the guests are directed into an enormous domed ballroom. Crystal chandeliers hang above rows of oak tables dressed in white silk and candlelight. Liveried waiters circulate with salmon pâté, roast venison, and later apple tart with sorbet. The room smells of wax, perfume, wine, and rain drying from expensive wool.',
+        'Karl Dietmar gives the keynote. The Gold Plaque itself goes to Leon Schütz, a poet obscure enough that several people at your table quietly ask one another who he is before applauding with perfect manners.',
+        'After dinner the formal arrangement loosens. Guests drift into smaller public rooms, the dance begins, and alcohol turns professional reserve into louder opinions. A waitress flirts shamelessly with a guest near the doors; a manager has become too drunk to lower his voice; two people argue politics as though the Wall fell specifically to prove one of them correct.',
+        'Nothing is wrong. That is important. For a while the Rathaus feels safe, social, almost banal—a place where the worst consequence of choosing badly should be an awkward conversation.'
+      ], art: null
+    };
+    if (b === 1) return {
+      kicker: 'Hamburg Rathaus · Near midnight',
+      title: 'Late Arrivals',
+      context: 'The crowd has thinned when four late guests are shown into the room: one woman and three middle-aged men in formal evening clothes.',
+      speaker: { name: 'A nearby guest', line: 'They have missed almost everything.' },
+      text: [
+        'You recognize the woman before you understand why the sight of her changes the room. Magda Orlova has been part of your life in one way or another—through work, friendship, family, old affection, or the literary circles that overlap between Hamburg and Berlin.',
+        'The men with her are less immediately familiar. One is exhausted-looking in a way that has nothing to do with the late hour. Depending on what worlds you move through, the name Filip Kramer may surface: a West Berlin painter with talent, drugs, occult rumors, and a reputation that tends to arrive before he does.',
+        'Then the men notice you. Their conversation stops without anyone raising a voice. One reaches for his glass and misses it the first time. Another has gone pale. They are not looking at you with ordinary curiosity, and not quite with recognition either. It is closer to the expression of people who have seen something impossible become physical.',
+        'Magda notices their reaction. A hurried exchange passes between the four of them. Courtesy survives just long enough for the men to excuse themselves, but the departure is too abrupt to be mistaken for casual fatigue.'
+      ], art: null
+    };
+    return {
+      kicker: 'Hamburg Rathaus · The dance',
+      title: 'Magda Orlova',
+      context: 'With Anton Mahler, Aleksandr “Sasha” Pogodin, and Filip Kramer gone, Magda is left facing the people they were so visibly afraid to see.',
+      speaker: { name: 'Magda Orlova', line: 'I was beginning to think I might leave Hamburg without finding anyone I knew.' },
+      text: [
+        'Up close, the change in Magda is difficult to dismiss. She looks as though several hard years have passed since the last time memory insists you saw her. Her face is drained, her movements careful. A sweet, heavy perfume arrives before she does and lingers after every gesture.',
+        'She removes her white gloves to greet you and puts them back on almost immediately. The contact is brief—a handshake, fingers against a sleeve, a reassuring touch at an elbow—but she seems compelled to make it with everyone before the conversation settles.',
+        'Berlin comes up first. Then sleeplessness. Then dreams. Magda describes waking with the feeling that she has been somewhere bitterly cold, somewhere dark enough to make darkness feel solid. When she tries to explain further, the confidence leaves her voice.',
+        'Ask about the three men and she names them: Anton Mahler, Sasha Pogodin, and Filip Kramer, friends from her youth in East Germany whom she had not seen together in years. Filip contacted her again after the Wall fell. She does not understand why they reacted to you as they did.',
+        'Before long she excuses herself. Offers of help make her smile but do not change her mind. The evening ends with more questions than it began with—and with the uncomfortable impression that somebody outside the Rathaus is still paying attention.'
+      ], art: null
+    };
   }
   if (s === 'ambush') {
-    if (b === 0) return { kicker: 'Berlin - Free Roam Interrupted', title: 'The Dodge Van', text: ['The metallic Dodge has been in the wrong place too many times to be coincidence.', 'Its side door opens. The men inside do not look surprised to see you looking back.'], art: '/media/art/scenes/ch01_medical_police_research_collage.webp' };
-    return { kicker: 'Story Lock - Combat Beat', title: 'No Clean Exit', text: ['The street compresses into cover, sightlines, engines, wet pavement, and the hard fact that somebody planned this.', 'Whatever you do next, do it together or accept what separation will cost.'], art: '/media/art/scenes/ch01_medical_police_research_collage.webp' };
+    if (b === 0) return {
+      kicker: 'Berlin · Night', title: 'The Russians Strike',
+      context: 'For days there have been signs that someone is building a file on you: opened mail, inexplicable record requests, and the same metallic Dodge van with dark windows appearing where it should not.',
+      speaker: null,
+      text: [
+        'Tonight the surveillance stops pretending to be passive. In a secluded stretch of street, the Dodge appears again and slows instead of passing. Its plates are difficult to read, the grime on them just a little too convenient.',
+        'The side door opens. The men who emerge do not shout a warning or ask for anything. Their silence is the most professional thing about them.',
+        'If you are visibly armed, hands go toward firearms. If you are not, the shapes in their grips are shorter and heavier. Either way, the intention is clear before anyone speaks: this is not intimidation arranged for later. It is an attack arranged for now.'
+      ], art: '/media/art/scenes/ch01_medical_police_research_collage.webp'
+    };
+    return {
+      kicker: 'Story Lock · Combat beat', title: 'No Clean Exit',
+      context: 'The first exchange has destroyed the attackers’ hope of a completely controlled ambush, but it has not made the street safe.',
+      speaker: { name: 'One of the attackers', line: 'Move.' },
+      text: [
+        'Wet pavement, parked cars, building entrances, and the running engine of the Dodge become the geometry of the fight. The attackers keep their communication short and practical. They are willing to retreat if the job goes bad; they are not interested in negotiating.',
+        'One protagonist’s movement changes the options available to the others. Cover is useful only if someone can reach it. An opening matters only if somebody recognizes it. The question is no longer whether the group reacts, but whether those reactions can become one plan before the attackers recover theirs.'
+      ], art: '/media/art/scenes/ch01_medical_police_research_collage.webp'
+    };
   }
   if (s === 'pogodin') {
-    if (b === 0) return { kicker: 'South of Berlin', title: "Pogodin's Mansion", text: ['The estate is set back from the road and built to discourage curiosity. Security lights rake the grounds. Dogs move somewhere beyond the wall.', 'You know enough now to understand that tonight matters. You do not yet know to whom.'], art: '/media/art/scenes/ch01_pogodin_mansion_collage.webp' };
-    if (b === 1) return { kicker: 'Inside the Estate', title: 'The Inner Circle', text: ['The public rooms are expensive and controlled. Below them is something else: soundproofed doors, ritual geometry, and people whose suffering has been turned into an instrument.', 'The three Russians are here. So is the ritual you believe can send the curse back to them.'], art: '/media/art/scenes/ch01_pogodin_ritual_collage.webp' };
-    return { kicker: 'Point of No Return', title: 'The Third Circle', text: ['The final circle must be drawn around Anton, Sasha, and Filip themselves.', 'The words are ready. The geometry is ready. The only uncertain thing left is whether you are.'], art: '/media/art/scenes/ch01_pogodin_ritual_collage.webp' };
+    if (b === 0) return {
+      kicker: 'Berlin · Pogodin estate', title: "Pogodin’s Mansion",
+      context: 'The evidence has converged on Sasha Pogodin’s estate: a guarded residence whose security makes more sense once you stop treating it as merely a rich man’s home.',
+      speaker: null,
+      text: [
+        'The house sits back from the road behind walls, controlled approaches, security lighting, and men whose posture tells you they are employed for more than opening gates. Somewhere beyond the lit windows, dogs move through the grounds.',
+        'The public face of the estate is money and privacy. The pattern underneath it is harder: visitors managed through specific entrances, rooms kept beyond ordinary circulation, and the sense of an organization using a residence as cover for something it cannot conduct openly.',
+        'You know Anton, Sasha, and Filip are connected to what has been happening since Hamburg. You also know the ritual theory you have assembled may be catastrophically wrong. Tonight is where those two uncertainties meet.'
+      ], art: '/media/art/scenes/ch01_pogodin_mansion_collage.webp'
+    };
+    if (b === 1) return {
+      kicker: 'Inside the estate', title: 'The Inner Circle',
+      context: 'Past the respectable rooms, the mansion changes character. What is hidden below was designed for privacy of a different kind.',
+      speaker: { name: 'A voice beyond the next door', line: 'They are ready downstairs.' },
+      text: [
+        'Soundproofed doors interrupt the expensive domestic architecture. The air grows warmer as you descend. Symbols have been worked into the space with too much care to be theatrical decoration.',
+        'There are prisoners here—people reduced to components of someone else’s ceremony. Their presence turns every abstract occult conclusion into an immediate human problem.',
+        'Anton, Sasha, and Filip are somewhere ahead. So is the ritual you believe may turn their curse back upon them. The deeper you go, the less certain it becomes that the curse belongs to any of you in the simple way you hoped.'
+      ], art: '/media/art/scenes/ch01_pogodin_ritual_collage.webp'
+    };
+    return {
+      kicker: 'Point of no return', title: 'The Third Circle',
+      context: 'The last stage of the rite requires the three Russians themselves inside the geometry. Completing it will end the question of whether you were willing to go this far.',
+      speaker: null,
+      text: [
+        'The circle is almost complete. Anton, Sasha, and Filip are no longer distant names attached to surveillance, dreams, and violence. They are frightened men inside a room built to make fear useful.',
+        'The words are ready. The geometry is ready. The captives are still here. Every decision that led to this basement now competes for priority at once.',
+        'What happens next will not be a private experiment. It will change the campaign for everyone who crosses the line with you.'
+      ], art: '/media/art/scenes/ch01_pogodin_ritual_collage.webp'
+    };
   }
-  return { kicker: 'Chagidiel', title: 'Waiting', text: ['The story has not yet decided what it wants from you.'], art: null };
+  return { kicker: 'Chagidiel', title: 'Waiting', context:'The campaign is between authored scenes.', speaker:null, text: ['The story has not yet decided what it wants from you.'], art: null };
 }
 function lockChoices(c, seat) {
   const s = c.current.scene, b = c.current.beat;
@@ -916,14 +1032,15 @@ function resolveJoint(c, actions) {
   const participants = (c.storyLock.participants || Object.keys(actions)).filter(x => actions[x]);
   const ids = participants.map(x => actions[x]?.id).filter(Boolean);
   const same = ids.length > 1 && ids.every(x => x === ids[0]);
+  const solo = !!c.testMode && participants.length === 1;
   const has = id => ids.includes(id);
   let text = [];
   if (s === 'gold_plaque') {
-    if (b === 0) text = same ? ['You fall into the same rhythm without discussing it. The room gives up details slowly: who belongs, who is performing belonging, who watches instead of drinking.'] : ['You divide your attention. Different instincts map the same room from different angles until the evening feels observed rather than merely attended.'];
+    if (b === 0) text = solo ? ['You let your attention move methodically through the room. Without another protagonist to divide the work, you build the picture yourself: who belongs, who is performing belonging, who watches instead of drinking.'] : (same ? ['You fall into the same rhythm without discussing it. The room gives up details slowly: who belongs, who is performing belonging, who watches instead of drinking.'] : ['You divide your attention. Different instincts map the same room from different angles until the evening feels observed rather than merely attended.']);
     if (b === 1) text = has('watch_russians') ? ['The Russians are not merely uncomfortable. They are frightened of you, and trying badly not to show it. Magda notices their reaction and becomes frightened in turn.'] : ['Magda receives you with warmth strained by exhaustion. Behind her, the three men exchange a quick, private look and leave sooner than courtesy requires.'];
     if (b === 2) text = ['Magda talks until the subject begins circling back on itself: Berlin, sleeplessness, the same nightmares, the feeling that something is waiting for her when she closes her eyes.', 'When you part, the evening feels unresolved. By the following night, everyone who stood close enough to her is ill.'];
   } else if (s === 'ambush') {
-    if (b === 0) text = has('protect') ? ['Someone moves toward another protagonist instead of toward safety. It costs distance and buys something more important: nobody inside the lock is isolated when the first shots force the street apart.'] : ['You react differently but not independently. One action creates the opening another needs. The men by the van lose the clean advantage they expected.'];
+    if (b === 0) text = solo ? ['You move on instinct before the ambush can settle into a clean pattern. With no second protagonist to cover, every decision is yours: distance, cover, pursuit, survival. The men by the van lose the effortless advantage they expected.'] : (has('protect') ? ['Someone moves toward another protagonist instead of toward safety. It costs distance and buys something more important: nobody inside the lock is isolated when the first shots force the street apart.'] : ['You react differently but not independently. One action creates the opening another needs. The men by the van lose the clean advantage they expected.']);
     else text = ['The encounter breaks before it becomes a siege. The Dodge tears away through wet traffic, leaving brass, tire smoke, and the certainty that whoever sent those men knows where you are.'];
   } else if (s === 'pogodin') {
     if (b === 0) text = ['You choose your approach and commit. Security is professional, but routine has made it predictable. The mansion gives you a way in, though not a safe one.'];
@@ -953,11 +1070,11 @@ function publicView(c, uid, online = {}) {
   const participant = (c.storyLock.participants || []).includes(seat);
   const relationshipList = Object.values(c.relationships || {}).filter(r => (r?.seats || []).includes(seat)).map(r => ({ ...r, otherSeat:(r.seats || []).find(x => x !== seat) || null }));
   const base = {
-    id:c.id, revision:c.revision, savedAt:c.savedAt || c.createdAt || null, saveReason:c.saveReason || 'campaign', phase:c.phase, seat,
+    id:c.id, name:c.name, revision:c.revision, savedAt:c.savedAt || c.createdAt || null, saveReason:c.saveReason || 'campaign', phase:c.phase, seat, testMode:!!c.testMode,
     player:{ characterId:own?.characterId || null, character:own?.character || null, entry:own?.entry || null, backgroundEditUsed:!!own?.backgroundEditUsed, backgroundEditAvailable:!!own?.character && !own?.backgroundEditUsed && !c.flags.ambushDone && ['lobby','free_roam'].includes(c.current.mode) },
     partner: partner ? { seat:other, characterId:partner.characterId || null, character:partner.character ? { name:partner.character.name, occupation:partner.character.occupation, occupationName:partner.character.occupationName } : null, online:!!online[other], lastSeen:partner.lastSeen || null } : null,
     companions,
-    party:{ occupied:occupiedSeats(c,false), withCharacters:occupiedSeats(c,true), maxSeats:3, minimumPrimary:['A','B'] },
+    party:{ occupied:occupiedSeats(c,false), withCharacters:occupiedSeats(c,true), maxSeats:c.testMode?1:3, minimumPrimary:c.testMode?['A']:['A','B'], names:Object.fromEntries(occupiedSeats(c,false).map(st=>[st,c.players?.[st]?.character?.name || `Seat ${st}`])) },
     relationships:relationshipList,
     relationshipTypes:RELATIONSHIP_TYPES,
     current:c.current,
@@ -965,12 +1082,48 @@ function publicView(c, uid, online = {}) {
     storyLock:{ active:c.storyLock.active, gate:c.storyLock.gate, ready:c.storyLock.ready, participants:c.storyLock.participants || [], participating:participant, submitted:!!c.storyLock.actions?.[seat], submissions:Object.fromEntries(SEATS.map(st=>[st,!!c.storyLock.actions?.[st]])), lastResolution:c.storyLock.lastResolution },
     freeRoam:{ day:c.freeRoam.day, slots:c.freeRoam.slots[seat], partySlotsUsed:Object.fromEntries(otherSeats(c,seat).map(st=>[st,spentCount(c,st)])), partnerSlotsUsed:other?spentCount(c,other):0, lastResult:c.freeRoam.lastResult[seat] ? { ...c.freeRoam.lastResult[seat], characterEcho:freeRoamCharacterEcho(own?.character,c.freeRoam.lastResult[seat]?.location) } : null, locations:Object.fromEntries(Object.entries(FREE_ROAM_LOCATIONS).map(([id,x])=>[id,{name:x.name,art:x.art,frame:x.frame,actions:Object.fromEntries(Object.entries(x.actions).map(([aid,a])=>[aid,{label:a.label,move:a.move,attribute:a.attribute || (MOVE_MAP[a.move]?.attribute || null)}]))}])) },
     journal:{ shared:c.journal.shared.map(x=>({...x,clue:CLUES[x.clueId]})), private:c.journal.private[seat].map(x=>({...x,clue:CLUES[x.clueId]})) },
-    invite:{ canManage:seat==='A', seats:{ B:{claimed:!!c.players.B,code:seat==='A'&&!c.players.B?(c.invites?.B || null):null}, C:{claimed:!!c.players.C,code:seat==='A'&&!c.players.C?(c.invites?.C || null):null} } },
+    invite:{ canManage:seat==='A'&&!c.testMode, disabledReason:c.testMode?'Single-player admin test campaigns do not accept invitations.':null, seats:{ B:{claimed:!!c.players.B,code:seat==='A'&&!c.testMode&&!c.players.B?(c.invites?.B || null):null}, C:{claimed:!!c.players.C,code:seat==='A'&&!c.testMode&&!c.players.C?(c.invites?.C || null):null} } },
     betaComplete:c.flags.betaComplete,
-    capabilities:{ campaignReset:seat==='A', notifications:true, mobileNav:true },
+    capabilities:{ campaignReset:seat==='A', notifications:true, mobileNav:true, adminSinglePlayerTest:!!c.testMode },
   };
   if (c.current.mode === 'story_lock' && participant) { base.story = personalizeStory(c,seat,sharedStoryText(c)); base.choices = lockChoices(c,seat); }
   return base;
+}
+
+function sceneLabel(c) {
+  const scene = c?.current?.scene || 'setup';
+  const labels = { setup:'Party assembly', gold_plaque:'The Gold Plaque', berlin_free_roam:'Berlin — Free Roam', ambush:'The Russians Strike', pogodin:"Pogodin’s Mansion", chapter1_boundary:'Chapter I boundary' };
+  return labels[scene] || scene.replace(/_/g,' ');
+}
+function campaignSummary(c, uid) {
+  const seat = seatFor(c, uid);
+  if (!seat) return null;
+  const names = occupiedSeats(c,false).map(st => c.players?.[st]?.character?.name).filter(Boolean);
+  return {
+    id:c.id, name:c.name, seat, owner:seat==='A', testMode:!!c.testMode, phase:c.phase, scene:c.current?.scene || 'setup', sceneLabel:sceneLabel(c), beat:Number(c.current?.beat || 0),
+    createdAt:c.createdAt || null, savedAt:c.savedAt || c.createdAt || null, saveReason:c.saveReason || 'campaign', revision:Number(c.revision || 0),
+    playerNames:names, occupied:occupiedSeats(c,false).length, completedCharacters:occupiedSeats(c,true).length, betaComplete:!!c.flags?.betaComplete,
+    sourceCampaignId:c.sourceCampaignId || null, sourceRevision:c.sourceRevision || null,
+  };
+}
+function cloneCampaignState(source, newId, newName) {
+  const copy = JSON.parse(JSON.stringify(source));
+  copy.id = newId;
+  copy.name = String(newName || `${source.name || 'Black Madonna'} — Saved State`).trim().slice(0,80);
+  copy.version = 5;
+  copy.sourceCampaignId = source.id;
+  copy.sourceRevision = Number(source.revision || 0);
+  copy.createdAt = Date.now();
+  copy.savedAt = Date.now();
+  copy.saveReason = 'manual_state_copy';
+  copy.revision = 1;
+  copy.processedActions = [];
+  copy.invites = copy.testMode ? { B:null, C:null } : {
+    B: copy.players?.B ? null : randId('').slice(0,10).toUpperCase(),
+    C: copy.players?.C ? null : randId('').slice(0,10).toUpperCase(),
+  };
+  copy.invite = null;
+  return ensureCampaignShape(copy);
 }
 
 async function safeNotify(env, player, message) {
@@ -1029,6 +1182,21 @@ export class AuthRoom {
     return user;
   }
 
+  async cleanupLegacyCharacterArtifacts() {
+    const markerKey = 'cleanup:v10:catherine-dubois';
+    if (await this.state.storage.get(markerKey)) return;
+    let removed = 0;
+    for (const prefix of ['character:','character-draft:']) {
+      const listed = await this.state.storage.list({ prefix });
+      for (const [key, rec] of listed) {
+        const c = rec?.character || rec?.draft || {};
+        const name = String(c.name || `${c.firstName || ''} ${c.lastName || ''}`).trim().replace(/\s+/g,' ').toLowerCase();
+        if (name === 'catherine dubois') { await this.state.storage.delete(key); removed++; }
+      }
+    }
+    await this.state.storage.put(markerKey, { at:Date.now(), removed });
+  }
+
   async issueReset(user, origin, issuedBy = 'self', deliver = true) {
     const previousHash = await this.state.storage.get(`reset-current:${user.uid}`);
     if (previousHash) await this.state.storage.delete(`reset:${previousHash}`);
@@ -1047,6 +1215,7 @@ export class AuthRoom {
   async fetch(request) {
     const url = new URL(request.url);
     await this.ensureBootstrapAdmin();
+    await this.cleanupLegacyCharacterArtifacts();
 
     if (url.pathname === '/register') {
       if (request.method !== 'POST') return json({ error: 'Method not allowed.' }, 405);
@@ -1195,10 +1364,18 @@ export class AuthRoom {
         let body; try { body = await request.json(); } catch (_) { return json({ error: 'Invalid request.' }, 400); }
         const campaignId = String(body.campaignId || '');
         if (!validCampaignId(campaignId)) return json({ error: 'Invalid campaign id.' }, 400);
-        current.ids = [campaignId, ...(current.ids || []).filter(x => x !== campaignId)].slice(0, 20);
+        current.ids = [campaignId, ...(current.ids || []).filter(x => x !== campaignId)].slice(0, 30);
         current.lastId = campaignId; current.updatedAt = Date.now();
         await this.state.storage.put(key, current);
         return json({ ok: true, ...current });
+      }
+      if (request.method === 'DELETE') {
+        let body; try { body = await request.json(); } catch (_) { return json({ error:'Invalid request.' },400); }
+        const campaignId=String(body.campaignId || '');
+        current.ids=(current.ids || []).filter(x=>x!==campaignId);
+        if (current.lastId===campaignId) current.lastId=current.ids[0] || null;
+        current.updatedAt=Date.now(); await this.state.storage.put(key,current);
+        return json({ok:true,...current});
       }
       return json({ error: 'Method not allowed.' }, 405);
     }
@@ -1335,12 +1512,21 @@ export class CampaignRoom {
     const method = request.headers.get('x-chagidiel-method');
     if (url.pathname === '/init') {
       let c = await this.load();
-      if (!c) { const b = await request.json(); c = newCampaign(b.id, b.invite, { uid, contact, method }); c.savedAt = Date.now(); c.saveReason = 'campaign_created'; await this.state.storage.put('campaign', c); }
+      if (!c) { const b = await request.json(); c = newCampaign(b.id, b.invite, { uid, contact, method }, b.name, b.testMode); c.savedAt = Date.now(); c.saveReason = b.testMode ? 'admin_test_campaign_created' : 'campaign_created'; await this.state.storage.put('campaign', c); }
       return json({ ok: true, state: publicView(c, uid, this.presence()), invite: c.invite });
+    }
+    if (url.pathname === '/clone-init') {
+      let c=await this.load();
+      if (c) return json({error:'Destination campaign already exists.'},409);
+      let body; try{body=await request.json()}catch(_){return json({error:'Invalid clone payload.'},400)}
+      if (!body?.snapshot || !body?.id) return json({error:'Clone payload is incomplete.'},400);
+      c=cloneCampaignState(body.snapshot,body.id,body.name); await this.state.storage.put('campaign',c);
+      return json({ok:true,state:publicView(c,uid,this.presence())},201);
     }
     let c = await this.load();
     if (!c) return json({ error: 'Campaign does not exist.' }, 404);
     if (url.pathname === '/join') {
+      if (c.testMode) return json({ error:'Admin single-player test campaigns do not accept invited players.' },403);
       const b = await request.json();
       let seat = seatFor(c,uid);
       if (!seat) {
@@ -1357,7 +1543,29 @@ export class CampaignRoom {
     const seat = seatFor(c,uid);
     if (!seat) return json({ error:'You are not a member of this campaign.' },403);
     c.players[seat].lastSeen=Date.now();
+    if (url.pathname === '/summary') return json({ok:true,summary:campaignSummary(c,uid)});
+    if (url.pathname === '/rename') {
+      if (seat!=='A') return json({error:'Only the campaign owner can rename this campaign.'},403);
+      if (request.method!=='POST') return json({error:'Method not allowed.'},405);
+      let body={}; try{body=await request.json()}catch(_){}
+      const name=String(body.name || '').trim().slice(0,80); if(!name)return json({error:'Enter a campaign name.'},400);
+      c.name=name; pushLog(c,'campaign_renamed',seat,{name}); await this.save(c,'campaign_renamed'); this.broadcast(c);
+      return json({ok:true,summary:campaignSummary(c,uid),state:publicView(c,uid,this.presence())});
+    }
+    if (url.pathname === '/clone-source') {
+      if (seat!=='A') return json({error:'Only the campaign owner can save a branch copy.'},403);
+      return json({ok:true,snapshot:c,members:occupiedSeats(c,false).map(st=>c.players[st]?.uid).filter(Boolean)});
+    }
+    if (url.pathname === '/delete') {
+      if (seat!=='A') return json({error:'Only the campaign owner can delete this campaign.'},403);
+      if (request.method!=='DELETE') return json({error:'Method not allowed.'},405);
+      const members=occupiedSeats(c,false).map(st=>c.players[st]?.uid).filter(Boolean);
+      for (const [,set] of this.sockets) for (const ws of set) { try{ws.send(JSON.stringify({type:'campaign_deleted',campaignId:c.id}));ws.close(1000,'Campaign deleted')}catch(_){} }
+      await this.state.storage.deleteAll();
+      return json({ok:true,deleted:c.id,members});
+    }
     if (url.pathname === '/invite') {
+      if (c.testMode) return json({ error:'Invitations are disabled in admin single-player test mode.' },409);
       if (seat !== 'A') return json({ error:'Only Seat A can manage campaign invitations.' },403);
       if (request.method === 'GET') return json({ ok:true, campaignId:c.id, seats:{ B:{claimed:!!c.players.B,invite:c.players.B?null:(c.invites?.B || null)}, C:{claimed:!!c.players.C,invite:c.players.C?null:(c.invites?.C || null)} } });
       if (request.method !== 'POST') return json({ error:'Method not allowed.' },405);
@@ -1436,7 +1644,8 @@ export class CampaignRoom {
             pushLog(c, 'character_set', seat, { characterId: incomingId, occupation: cleaned.character.occupation, origin: cleaned.character.origin?.country, region: cleaned.character.origin?.region });
           }
         }
-        if (c.players.A?.character && c.players.B?.character && (!c.players.C || c.players.C.character) && c.current.mode === 'lobby') { storyGate(c,'gold_plaque',false); c.phase='chapter1'; }
+        const partyReady = c.testMode ? !!c.players.A?.character : (!!c.players.A?.character && !!c.players.B?.character && (!c.players.C || !!c.players.C.character));
+        if (partyReady && c.current.mode === 'lobby') { storyGate(c,'gold_plaque',false); c.phase='chapter1'; }
       } else if (b.type === 'revise_background') {
         const player=c.players[seat];
         if (!player.character) return json({ error:'No active protagonist to revise.' },409);
@@ -1474,7 +1683,9 @@ export class CampaignRoom {
         const readyMap=forced?gate.acknowledged:c.storyLock.ready;
         const readySeats=eligible.filter(st=>!!readyMap[st]);
         let activate=false, participants=[];
-        if (gate.requirement === 'full_party') {
+        if (c.testMode) {
+          activate=readySeats.includes(seat); participants=activate?[seat]:[];
+        } else if (gate.requirement === 'full_party') {
           const occupied=occupiedSeats(c,false);
           const missingCharacters=occupied.filter(st=>!c.players?.[st]?.character);
           const required=occupied.filter(st=>!!c.players?.[st]?.character);
@@ -1484,7 +1695,7 @@ export class CampaignRoom {
           activate=readySeats.length>=2; participants=readySeats;
         }
         if (activate) activateStory(c,c.current.scene,participants);
-        else for (const st of otherSeats(c,seat,true)) if (!this.presence()[st]) await safeNotify(this.env,c.players[st],gate.requirement==='full_party'?'A major Story Lock requires the full active party.':'A Story Lock can begin when any two protagonists are ready.');
+        else if (!c.testMode) for (const st of otherSeats(c,seat,true)) if (!this.presence()[st]) await safeNotify(this.env,c.players[st],gate.requirement==='full_party'?'A major Story Lock requires the full active party.':'A Story Lock can begin when any two protagonists are ready.');
       } else if (b.type === 'story_gate_cancel') {
         if (c.current.mode === 'story_gate' && !c.storyLock.gate?.forced) c.storyLock.ready[seat] = false;
       } else if (b.type === 'lock_action') {
@@ -1497,7 +1708,8 @@ export class CampaignRoom {
         c.storyLock.actions[seat]={ id:selected.id,label:selected.label,move:selected.move || null,roll };
         pushLog(c,'joint_action_submitted',seat,{scene:c.current.scene,beat:c.current.beat,action:selected.id,roll});
         const participants=(c.storyLock.participants || []).filter(st=>c.players[st]?.character);
-        const allSubmitted=participants.length>=2 && participants.every(st=>!!c.storyLock.actions[st]);
+        const minimumSubmissions=c.testMode?1:2;
+        const allSubmitted=participants.length>=minimumSubmissions && participants.every(st=>!!c.storyLock.actions[st]);
         if (allSubmitted) {
           const resolution=resolveJoint(c,c.storyLock.actions), rolls=Object.fromEntries(participants.map(st=>[st,c.storyLock.actions[st].roll]));
           if (c.current.scene==='ambush') for (const st of participants) if (rolls[st]?.outcome==='failure'&&!c.players[st].character.wounds.includes('Serious Wound')) c.players[st].character.wounds.push('Serious Wound');
@@ -1522,12 +1734,16 @@ export class CampaignRoom {
         const result = { id: randId('fr_'), location: b.location, locationName: loc.name, actionId: b.actionId, label: act.label, prose: act.prose, clueId: act.clue, roll, art: loc.art, frame: loc.frame, at: Date.now() };
         c.freeRoam.slots[seat][slot] = result.id; c.freeRoam.lastResult[seat] = result; addPrivateClue(c, seat, act.clue, loc.name); pushLog(c, 'free_roam_action', seat, { location: b.location, action: b.actionId, roll });
         const eligible=occupiedSeats(c,true), oneSlot=eligible.filter(st=>spentCount(c,st)>=1).length, twoSlots=eligible.filter(st=>spentCount(c,st)>=2).length;
-        if (c.current.mode==='free_roam'&&!c.flags.ambushDone&&oneSlot>=2) { storyGate(c,'ambush',true); for (const st of otherSeats(c,seat,true)) if (!this.presence()[st]) await safeNotify(this.env,c.players[st],'An event has interrupted Free Roam. Open Chagidiel when you can.'); }
-        else if (c.current.mode==='free_roam'&&c.flags.ambushDone&&!c.flags.pogodinAvailable&&(sharedClueCount(c)>=3||twoSlots>=2)) { c.flags.pogodinAvailable=true; storyGate(c,'pogodin',false); }
+        const soloPrivateClues=c.testMode?new Set((c.journal.private[seat]||[]).map(x=>x.clueId)).size:0;
+        const ambushThreshold=c.testMode?spentCount(c,seat)>=2:oneSlot>=2;
+        const pogodinThreshold=c.testMode?(soloPrivateClues>=3||spentCount(c,seat)>=3):(sharedClueCount(c)>=3||twoSlots>=2);
+        if (c.current.mode==='free_roam'&&!c.flags.ambushDone&&ambushThreshold) { storyGate(c,'ambush',true); if(!c.testMode)for (const st of otherSeats(c,seat,true)) if (!this.presence()[st]) await safeNotify(this.env,c.players[st],'An event has interrupted Free Roam. Open Chagidiel when you can.'); }
+        else if (c.current.mode==='free_roam'&&c.flags.ambushDone&&!c.flags.pogodinAvailable&&pogodinThreshold) { c.flags.pogodinAvailable=true; storyGate(c,'pogodin',false); }
       } else if (b.type === 'share_clue') {
         const clueId = String(b.clueId || ''); if (!c.journal.private[seat].some(x => x.clueId === clueId)) return json({ error: 'You do not have that clue.' }, 400);
         if (!c.journal.shared.some(x => x.clueId === clueId)) c.journal.shared.push({ clueId, sourceSeat: seat, source: b.source || '', at: Date.now() }); pushLog(c, 'clue_shared', seat, { clueId });
-        if (c.flags.ambushDone && !c.flags.pogodinAvailable && sharedClueCount(c) >= 3) { c.flags.pogodinAvailable = true; storyGate(c, 'pogodin', false); }
+        const evidenceThreshold=c.testMode?new Set((c.journal.private[seat]||[]).map(x=>x.clueId)).size>=3:sharedClueCount(c)>=3;
+        if (c.flags.ambushDone && !c.flags.pogodinAvailable && evidenceThreshold) { c.flags.pogodinAvailable = true; storyGate(c, 'pogodin', false); }
       } else if (b.type === 'roll') {
         const moveKey = String(b.move || ''); const move = MOVE_MAP[moveKey]; if (!move) return json({ error: 'Unknown move.' }, 400);
         const roll = rollFor(c.players[seat].character, moveKey, Number(b.extra || 0)); c.freeRoam.lastResult[seat] = { kind: 'roll', roll, at: Date.now() }; pushLog(c, 'roll_resolved', seat, { roll });
@@ -1543,7 +1759,17 @@ export class CampaignRoom {
 }
 
 function elevenKeyInfo(env) {
-  const options=[['ELEVENLABS_API_KEY',env.ELEVENLABS_API_KEY],['SANGRIS_ELEVENLABS_API_KEY',env.SANGRIS_ELEVENLABS_API_KEY],['ELEVENLABS_KEY',env.ELEVENLABS_KEY],['XI_API_KEY',env.XI_API_KEY]];
+  const options=[
+    ['ELEVENLABS_API_KEY',env.ELEVENLABS_API_KEY],
+    ['SANGRIS_ELEVENLABS_API_KEY',env.SANGRIS_ELEVENLABS_API_KEY],
+    ['SANGRIS_ELEVENLABS_KEY',env.SANGRIS_ELEVENLABS_KEY],
+    ['SANGRIS_API_KEY',env.SANGRIS_API_KEY],
+    ['BLOODLINES_ELEVENLABS_API_KEY',env.BLOODLINES_ELEVENLABS_API_KEY],
+    ['ELEVENLABS_KEY',env.ELEVENLABS_KEY],
+    ['ELEVENLABS_TOKEN',env.ELEVENLABS_TOKEN],
+    ['XI_API_KEY',env.XI_API_KEY],
+    ['XI_API_TOKEN',env.XI_API_TOKEN],
+  ];
   const found=options.find(([,value])=>String(value || '').trim());
   return found ? { key:String(found[1]).trim(), binding:found[0] } : { key:'', binding:null };
 }
@@ -1586,7 +1812,7 @@ async function resolveSharedFeaturedVoices(env) {
 }
 async function listVoices(env) {
   const key=elevenKeyInfo(env).key;
-  if (!key) return FEATURED_VOICES;
+  if (!key) throw new Error('No ElevenLabs API key binding is visible to the Chagidiel Worker. The same Sangris key value can be reused.');
   const r = await fetch(`${ELEVEN_BASE}/v2/voices?page_size=100&sort=name&sort_direction=asc&include_total_count=false`, { headers: { 'xi-api-key': key } });
   if (!r.ok) throw new Error(`ElevenLabs voices request failed (${r.status})`);
   const d = await r.json();
@@ -1610,6 +1836,19 @@ async function listVoices(env) {
   });
   return voices;
 }
+async function narrationDiagnostics(env) {
+  const info=elevenKeyInfo(env);
+  const out={configured:!!info.key,binding:info.binding,r2Configured:!!env.NARRATION_AUDIO,elevenlabsOk:false,status:null,detail:null};
+  if(!info.key){out.detail='No recognized ElevenLabs secret binding was found on this Worker.';return out;}
+  try{
+    const r=await fetch(`${ELEVEN_BASE}/v2/voices?page_size=1&include_total_count=false`,{headers:{'xi-api-key':info.key}});
+    out.status=r.status; out.elevenlabsOk=r.ok;
+    if(!r.ok) out.detail=(await r.text()).slice(0,600);
+    else out.detail='The key was accepted by ElevenLabs.';
+  }catch(e){out.detail=String(e?.message || e);}
+  return out;
+}
+
 async function elevenTTSWithRetry(url, options) {
   let last = null;
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -1671,7 +1910,7 @@ export default {
     if (url.pathname === '/api/health') {
       const smsLoginMode = twilioVerifyConfigured(env) ? 'twilio_verify' : (twilioMessagingConfigured(env) ? 'twilio_messages' : null);
       return json({
-        ok:true, build:'chagidiel-beta-9-reset-mobile-notifications',
+        ok:true, build:'chagidiel-beta-11-admin-single-player-test',
         elevenlabsConfigured:!!elevenKeyInfo(env).key,
         elevenlabsBinding:elevenKeyInfo(env).binding,
         r2Configured:!!env.NARRATION_AUDIO,
@@ -1699,7 +1938,14 @@ export default {
         oneTimeBackgroundRevision:true,
         campaignReset:true,
         notificationCenter:true,
-        mobileNavigationV2:true
+        mobileNavigationV2:true,
+        dialoguePageV2:true,
+        campaignLibrary:true,
+        campaignStateCopies:true,
+        presenceDropdown:true,
+        legacyCatherineCleanup:true,
+        sangrisNarrationBackend:true,
+        adminSinglePlayerTestMode:true
       },200,{'cache-control':'no-store'});
     }
     if (url.pathname === '/api/config') return json({ vapidPublicKey: env.VAPID_PUBLIC_KEY || null, pushDelivery: false });
@@ -1750,6 +1996,18 @@ export default {
       if (!user) return json({ error: 'Authentication required.' }, 401);
       return authStub(env).fetch('https://auth/campaigns', { method:'GET', headers:{ 'x-chagidiel-user':user.uid } });
     }
+    if (url.pathname === '/api/campaigns/library' && request.method === 'GET') {
+      const user=await authFromRequest(request,env,url); if(!user)return json({error:'Authentication required.'},401);
+      const memResp=await authStub(env).fetch('https://auth/campaigns',{method:'GET',headers:{'x-chagidiel-user':user.uid}});
+      const mem=await memResp.json(); const ids=Array.isArray(mem.ids)?mem.ids.slice(0,30):[];
+      const results=await Promise.all(ids.map(async id=>{
+        try{const r=await campaignStub(env,id).fetch('https://campaign/summary',{headers:{'x-chagidiel-user':user.uid}});if(!r.ok)return {id,stale:r.status===404||r.status===403};const d=await r.json();return {id,summary:d.summary};}catch(_){return {id,stale:false};}
+      }));
+      const stale=results.filter(x=>x.stale).map(x=>x.id);
+      for(const campaignId of stale) await authStub(env).fetch('https://auth/campaigns',{method:'DELETE',headers:{'x-chagidiel-user':user.uid,'content-type':'application/json'},body:JSON.stringify({campaignId})});
+      const campaigns=results.map(x=>x.summary).filter(Boolean).sort((a,b)=>Number(b.savedAt||0)-Number(a.savedAt||0));
+      return json({ok:true,campaigns,lastId:mem.lastId || null});
+    }
     if (url.pathname === '/api/admin/users' && request.method === 'GET') {
       const user = await authFromRequest(request, env, url);
       if (!user || user.role !== 'admin') return json({ error: 'Administrator access required.' }, 403);
@@ -1760,6 +2018,10 @@ export default {
       if (!user || user.role !== 'admin') return json({ error: 'Administrator access required.' }, 403);
       const body = await request.text();
       return authStub(env).fetch('https://auth/admin/reset', { method:'POST', headers:{ 'content-type':'application/json', 'x-chagidiel-admin':'1', 'x-chagidiel-admin-uid':user.uid, 'x-chagidiel-origin':url.origin }, body });
+    }
+    if (url.pathname === '/api/narration-diagnostics' && request.method === 'GET') {
+      const user=await authFromRequest(request,env,url); if(!user)return json({error:'Authentication required.'},401);
+      return json({ok:true,...await narrationDiagnostics(env)},200,{'cache-control':'no-store'});
     }
     if (url.pathname === '/api/voices') {
       const user = await authFromRequest(request, env, url); if (!user) return json({ error:'Authentication required.' },401);
@@ -1774,9 +2036,13 @@ export default {
     }
     if (url.pathname === '/api/campaigns' && request.method === 'POST') {
       const user = await authFromRequest(request,env,url); if(!user) return json({error:'Authentication required.'},401);
+      let createBody={}; try{createBody=await request.clone().json()}catch(_){}
       const id = randId('c_').slice(0,18); const invite = randId('').slice(0,10).toUpperCase();
+      const name=String(createBody.name || '').trim().slice(0,80);
+      const testMode=!!createBody.testMode;
+      if(testMode && user.role!=='admin') return json({error:'Administrator access is required for single-player test campaigns.'},403);
       const h=new Headers({'x-chagidiel-user':user.uid,'x-chagidiel-contact':user.contact,'x-chagidiel-method':user.method,'content-type':'application/json'});
-      const response = await campaignStub(env,id).fetch('https://campaign/init',{method:'POST',headers:h,body:JSON.stringify({id,invite})});
+      const response = await campaignStub(env,id).fetch('https://campaign/init',{method:'POST',headers:h,body:JSON.stringify({id,invite,name,testMode})});
       const data = await response.json();
       if (response.ok) await authStub(env).fetch('https://auth/campaigns',{method:'POST',headers:{'x-chagidiel-user':user.uid,'content-type':'application/json'},body:JSON.stringify({campaignId:id})});
       return json(data,response.status);
@@ -1788,6 +2054,24 @@ export default {
       const data = await response.json();
       if (response.ok) await authStub(env).fetch('https://auth/campaigns',{method:'POST',headers:{'x-chagidiel-user':user.uid,'content-type':'application/json'},body:JSON.stringify({campaignId:id})});
       return json(data,response.status);
+    }
+    const campaignManageMatch=url.pathname.match(/^\/api\/campaigns\/(c_[a-f0-9]+)$/);
+    if(campaignManageMatch && ['PATCH','DELETE'].includes(request.method)){
+      const user=await authFromRequest(request,env,url);if(!user)return json({error:'Authentication required.'},401);const id=campaignManageMatch[1];
+      if(request.method==='PATCH'){let b={};try{b=await request.json()}catch(_){};return forwardCampaign(request,env,id,'/rename',user,{name:b.name});}
+      const h=new Headers({'x-chagidiel-user':user.uid});const resp=await campaignStub(env,id).fetch('https://campaign/delete',{method:'DELETE',headers:h});const data=await resp.json();
+      if(resp.ok)for(const memberUid of (data.members||[]))await authStub(env).fetch('https://auth/campaigns',{method:'DELETE',headers:{'x-chagidiel-user':memberUid,'content-type':'application/json'},body:JSON.stringify({campaignId:id})});
+      return json(data,resp.status);
+    }
+    const cloneMatch=url.pathname.match(/^\/api\/campaigns\/(c_[a-f0-9]+)\/clone$/);
+    if(cloneMatch && request.method==='POST'){
+      const user=await authFromRequest(request,env,url);if(!user)return json({error:'Authentication required.'},401);const sourceId=cloneMatch[1];
+      const sourceResp=await campaignStub(env,sourceId).fetch('https://campaign/clone-source',{headers:{'x-chagidiel-user':user.uid}});const sourceData=await sourceResp.json();if(!sourceResp.ok)return json(sourceData,sourceResp.status);
+      let body={};try{body=await request.json()}catch(_){};const id=randId('c_').slice(0,18);const name=String(body.name||`${sourceData.snapshot?.name||'Black Madonna'} — Saved State`).trim().slice(0,80);
+      const h=new Headers({'x-chagidiel-user':user.uid,'x-chagidiel-contact':user.contact,'x-chagidiel-method':user.method,'content-type':'application/json'});
+      const cloneResp=await campaignStub(env,id).fetch('https://campaign/clone-init',{method:'POST',headers:h,body:JSON.stringify({id,name,snapshot:sourceData.snapshot})});const cloneData=await cloneResp.json();
+      if(cloneResp.ok)for(const memberUid of (sourceData.members||[]))await authStub(env).fetch('https://auth/campaigns',{method:'POST',headers:{'x-chagidiel-user':memberUid,'content-type':'application/json'},body:JSON.stringify({campaignId:id})});
+      return json(cloneData,cloneResp.status);
     }
     const inviteMatch = url.pathname.match(/^\/api\/campaigns\/(c_[a-f0-9]+)\/invite$/);
     if (inviteMatch && ['GET','POST'].includes(request.method)) {

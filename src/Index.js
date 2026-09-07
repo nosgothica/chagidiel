@@ -2,7 +2,7 @@ const DEFAULT_VOICE_ID = '54YYBuRuAG6KJooiOhFI';
 const MODEL_ID = 'eleven_multilingual_v2';
 const OUTPUT_FORMAT = 'mp3_44100_128';
 const ELEVEN_BASE = 'https://api.elevenlabs.io';
-const AUDIO_PROFILE_VERSION = 'chagidiel-beta-6-reliable-readaloud-v1';
+const AUDIO_PROFILE_VERSION = 'chagidiel-beta-8-reliable-readaloud-v2';
 const VOICE_SETTINGS = { stability: 0.64, similarity_boost: 0.82, style: 0.0, use_speaker_boost: true, speed: 1.0 };
 
 // Keep the same featured ElevenLabs choices used by the current Sangris build.
@@ -94,7 +94,20 @@ const OCCUPATION_DETAILS = {
   agent: { archetype: 'The Deceiver', languages: 'German native; English and French fluent; Russian broken.' },
 };
 const DARK_SECRETS = new Set(['broken_childhood','mental_illness','secret_past','strange_death','occult_fascination','guilty','addict','flashbacks']);
-const FAMILIES = new Set(['alone','fiance','divorced','accident','casual','joyless','destructive','abusive','happy']);
+const FAMILIES = new Set(['alone','independent','chosen_family','single_fulfilled','committed_no_children','community','single_parent','fiance','divorced','accident','casual','joyless','destructive','abusive','happy']);
+const RELATIONSHIP_TYPES = {
+  married: 'Married',
+  dating: 'Dating / romantic partners',
+  engaged: 'Engaged',
+  close_friends: 'Close friends',
+  siblings: 'Siblings',
+  cousins: 'Extended family / cousins',
+  colleagues: 'Colleagues',
+  former_partners: 'Former partners, still close',
+  complicated: 'Complicated history',
+  recent_acquaintances: 'Recent acquaintances',
+  strangers: 'Strangers before the campaign',
+};
 const EAST_GERMAN_REGIONS = ['East Berlin / Brandenburg','Saxony / Thuringia','Mecklenburg / Saxony-Anhalt'];
 
 const MAGDA_RELATIONS = {
@@ -407,10 +420,25 @@ function publicCharacterRecord(rec) {
     character: rec.character || null,
   };
 }
+function publicDraftRecord(rec) {
+  if (!rec) return null;
+  return { id: rec.id, createdAt: rec.createdAt || null, updatedAt: rec.updatedAt || null, draft: rec.draft || {} };
+}
+function cleanDraftPayload(value) {
+  let raw = '';
+  try { raw = JSON.stringify(value || {}); } catch (_) { return { error: 'Draft data is invalid.' }; }
+  if (raw.length > 30000) return { error: 'Character draft is too large.' };
+  let draft; try { draft = JSON.parse(raw); } catch (_) { return { error: 'Character draft is invalid.' }; }
+  draft.stage = Math.max(0, Math.min(7, Number(draft.stage || 0)));
+  return { draft };
+}
 function characterStoragePrefix(uid) { return `character:${String(uid || '')}:`; }
 function characterStorageKey(uid, id) { return `${characterStoragePrefix(uid)}${String(id || '')}`; }
+function characterDraftPrefix(uid) { return `character-draft:${String(uid || '')}:`; }
+function characterDraftKey(uid, id) { return `${characterDraftPrefix(uid)}${String(id || '')}`; }
 function campaignMemoryKey(uid) { return `campaigns:${String(uid || '')}`; }
 function validCharacterId(id) { return /^pc_[a-f0-9]{8,64}$/.test(String(id || '')); }
+function validDraftId(id) { return /^dr_[a-f0-9]{8,64}$/.test(String(id || '')); }
 function validCampaignId(id) { return /^c_[a-f0-9]+$/.test(String(id || '')); }
 async function signUserSession(env, user) {
   return signSession(env, {
@@ -442,33 +470,91 @@ function rollFor(character, moveKey, extra = 0) {
   return { move: move.name, attribute: move.attribute, ...roll2d10(modifier) };
 }
 
+const SEATS = ['A','B','C'];
+function blankReady() { return { A:false, B:false, C:false }; }
+function blankSeatState() { return { A:null, B:null, C:null }; }
+function playerRecord(creator) {
+  return { uid: creator.uid, contact: creator.contact, method: creator.method, characterId: null, character: null, characterHistory: [], entry: null, lastSeen: Date.now(), prefs: { storyAlerts: true, evidenceAlerts: true }, backgroundEditUsed: false };
+}
 function newCampaign(id, invite, creator) {
   return {
-    version: 2,
+    version: 3,
     id,
-    invite,
+    invite: null,
+    invites: { B: invite, C: randId('').slice(0,10).toUpperCase() },
     createdAt: Date.now(),
     revision: 1,
     phase: 'lobby',
-    players: {
-      A: { uid: creator.uid, contact: creator.contact, method: creator.method, characterId: null, character: null, characterHistory: [], entry: null, lastSeen: Date.now(), prefs: { storyAlerts: true, evidenceAlerts: true } },
-      B: null,
-    },
+    players: { A: playerRecord(creator), B: null, C: null },
+    relationships: {},
     current: { mode: 'lobby', scene: 'setup', beat: 0 },
-    storyLock: { gate: null, active: false, ready: { A: false, B: false }, actions: {}, lastResolution: null },
-    freeRoam: { day: '17 September 1991', slots: { A: [null, null, null], B: [null, null, null] }, lastResult: { A: null, B: null } },
-    journal: { shared: [], private: { A: [], B: [] } },
-    flags: { goldPlaqueDone: false, ambushDone: false, pogodinAvailable: false, betaComplete: false, marked: { A: false, B: false }, infection: { A: false, B: false } },
+    storyLock: { gate: null, active: false, ready: blankReady(), actions: {}, participants: [], lastResolution: null },
+    freeRoam: { day: '17 September 1991', slots: { A:[null,null,null], B:[null,null,null], C:[null,null,null] }, lastResult: blankSeatState() },
+    journal: { shared: [], private: { A:[], B:[], C:[] } },
+    flags: { goldPlaqueDone:false, ambushDone:false, pogodinAvailable:false, betaComplete:false, marked:{A:false,B:false,C:false}, infection:{A:false,B:false,C:false} },
     processedActions: [],
     log: [],
   };
 }
+function ensureCampaignShape(c) {
+  if (!c) return c;
+  c.version = Math.max(3, Number(c.version || 1));
+  c.players = c.players || {};
+  if (!('C' in c.players)) c.players.C = null;
+  for (const seat of SEATS) if (c.players[seat]) {
+    if (!Array.isArray(c.players[seat].characterHistory)) c.players[seat].characterHistory = [];
+    if (typeof c.players[seat].backgroundEditUsed !== 'boolean') c.players[seat].backgroundEditUsed = false;
+  }
+  c.invites = c.invites || { B: c.players.B ? null : (c.invite || null), C: null };
+  if (!('B' in c.invites)) c.invites.B = c.players.B ? null : (c.invite || null);
+  if (!('C' in c.invites)) c.invites.C = null;
+  c.invite = null;
+  c.relationships = c.relationships || {};
+  c.storyLock = c.storyLock || {};
+  c.storyLock.ready = { ...blankReady(), ...(c.storyLock.ready || {}) };
+  c.storyLock.actions = c.storyLock.actions || {};
+  c.storyLock.participants = Array.isArray(c.storyLock.participants) ? c.storyLock.participants.filter(x => SEATS.includes(x)) : [];
+  if (c.storyLock.gate) {
+    c.storyLock.gate.acknowledged = { ...blankReady(), ...(c.storyLock.gate.acknowledged || {}) };
+    if (!c.storyLock.gate.requirement) c.storyLock.gate.requirement = c.storyLock.gate.scene === 'ambush' ? 'quorum_2' : 'full_party';
+  }
+  c.freeRoam = c.freeRoam || { day:'17 September 1991', slots:{}, lastResult:{} };
+  c.freeRoam.slots = c.freeRoam.slots || {};
+  c.freeRoam.lastResult = c.freeRoam.lastResult || {};
+  for (const seat of SEATS) {
+    if (!Array.isArray(c.freeRoam.slots[seat])) c.freeRoam.slots[seat] = [null,null,null];
+    if (!(seat in c.freeRoam.lastResult)) c.freeRoam.lastResult[seat] = null;
+  }
+  c.journal = c.journal || { shared:[], private:{} };
+  c.journal.shared = c.journal.shared || [];
+  c.journal.private = c.journal.private || {};
+  for (const seat of SEATS) if (!Array.isArray(c.journal.private[seat])) c.journal.private[seat] = [];
+  c.flags = c.flags || {};
+  c.flags.marked = { A:false,B:false,C:false, ...(c.flags.marked || {}) };
+  c.flags.infection = { A:false,B:false,C:false, ...(c.flags.infection || {}) };
+  c.processedActions = Array.isArray(c.processedActions) ? c.processedActions : [];
+  c.log = Array.isArray(c.log) ? c.log : [];
+  return c;
+}
 function seatFor(c, uid) {
-  if (c.players.A?.uid === uid) return 'A';
-  if (c.players.B?.uid === uid) return 'B';
+  for (const seat of SEATS) if (c.players?.[seat]?.uid === uid) return seat;
   return null;
 }
-function otherSeat(seat) { return seat === 'A' ? 'B' : 'A'; }
+function occupiedSeats(c, requireCharacter = false) {
+  return SEATS.filter(seat => c.players?.[seat] && (!requireCharacter || c.players[seat].character));
+}
+function otherSeats(c, seat, requireCharacter = false) { return occupiedSeats(c, requireCharacter).filter(x => x !== seat); }
+function primaryCounterpart(c, seat) {
+  const order = seat === 'A' ? ['B','C'] : seat === 'B' ? ['A','C'] : ['A','B'];
+  return order.find(x => c.players?.[x]) || null;
+}
+function relationshipKey(a,b) { return [a,b].sort().join(':'); }
+function storyRequirement(scene) { return ['gold_plaque','pogodin'].includes(scene) ? 'full_party' : 'quorum_2'; }
+function requiredSeatsForGate(c, requirement) {
+  const eligible = occupiedSeats(c, true);
+  if (requirement === 'full_party') return eligible;
+  return [];
+}
 function cleanArrayText(value, maxItems = 4, maxLen = 220) {
   return Array.isArray(value) ? value.slice(0, maxItems).map(x => String(x || '').slice(0, maxLen)) : [];
 }
@@ -554,20 +640,25 @@ function sharedClueCount(c) { return c.journal.shared.length; }
 function spentCount(c, seat) { return c.freeRoam.slots[seat].filter(Boolean).length; }
 function nextSlot(c, seat) { return c.freeRoam.slots[seat].findIndex(x => !x); }
 function storyGate(c, scene, forced = false) {
+  const requirement = storyRequirement(scene);
   c.current = { mode: 'story_gate', scene, beat: 0 };
-  c.storyLock = { gate: { scene, forced, acknowledged: { A: false, B: false } }, active: false, ready: { A: false, B: false }, actions: {}, lastResolution: null };
+  c.storyLock = { gate: { scene, forced, requirement, requiredSeats: requiredSeatsForGate(c, requirement), acknowledged: blankReady() }, active: false, ready: blankReady(), actions: {}, participants: [], lastResolution: null };
 }
-function activateStory(c, scene) {
+function activateStory(c, scene, participants = null) {
+  const eligible = occupiedSeats(c, true);
+  const chosen = (participants || eligible).filter(x => eligible.includes(x));
   c.current = { mode: 'story_lock', scene, beat: 0 };
   c.storyLock.active = true;
   c.storyLock.gate = null;
   c.storyLock.actions = {};
+  c.storyLock.participants = chosen;
   c.storyLock.lastResolution = null;
 }
 function finishStory(c, nextMode = 'free_roam') {
   c.storyLock.active = false;
   c.storyLock.actions = {};
-  c.storyLock.ready = { A: false, B: false };
+  c.storyLock.ready = blankReady();
+  c.storyLock.participants = [];
   c.storyLock.gate = null;
   if (nextMode === 'free_roam') c.current = { mode: 'free_roam', scene: 'berlin_free_roam', beat: 0 };
 }
@@ -634,10 +725,61 @@ function darkSecretEcho(character, scene) {
   if (scene === 'gold_plaque' && character.darkSecret === 'strange_death') return 'For one moment, the Russians’ reaction gives you the same cold sensation as the death you have never been able to explain: the certainty that someone else knows more than you do.';
   return null;
 }
+function familyEcho(character, scene) {
+  const family = character?.family;
+  const map = {
+    independent: {
+      gold_plaque: 'You came alone because solitude is not the same thing as loneliness. You know how to enter a room without needing it to validate you.',
+      ambush: 'There is no domestic fantasy waiting to rescue you from this. The life you built for yourself is real, chosen, and worth getting back to.',
+    },
+    chosen_family: {
+      gold_plaque: 'Blood has never been the only way you measure family. Several people in this room would understand that instinctively; others never will.',
+      ambush: 'Your first thought is not of ancestry but of the people who chose you and whom you chose back.',
+    },
+    single_fulfilled: {
+      gold_plaque: 'You are not waiting for a relationship to begin your real life. The evening is interesting on its own terms, and so are you.',
+      ambush: 'The threat clarifies something simple: a fulfilled life can still be stolen, and you have no intention of surrendering yours.',
+    },
+    committed_no_children: {
+      gold_plaque: 'The future you imagine with your partner does not require children to feel complete. That certainty has survived other people’s opinions.',
+    },
+    community: {
+      gold_plaque: 'You are used to rooms held together by networks of women, artists, organizers, colleagues, and friends rather than by formal authority.',
+      pogodin: 'Power looks different when you have spent years watching ordinary people organize around institutions that assumed they were powerless.',
+    },
+    single_parent: {
+      ambush: 'Fear arrives with a second edge: someone depends on you getting home.',
+    },
+  };
+  return map[family]?.[scene] || null;
+}
+function acceptedRelationships(c, seat) {
+  return Object.values(c.relationships || {}).filter(r => r?.status === 'accepted' && (r.seats || []).includes(seat));
+}
+function relationshipEcho(c, seat, scene) {
+  const rel = acceptedRelationships(c, seat)[0];
+  if (!rel) return null;
+  const other = rel.seats.find(x => x !== seat);
+  const otherName = c.players?.[other]?.character?.name || 'the other protagonist';
+  const type = rel.type;
+  if (scene === 'gold_plaque') {
+    if (type === 'married') return `${otherName} is not merely another investigator in the room. You know the private rhythms of their attention well enough to notice when something has unsettled them.`;
+    if (type === 'dating' || type === 'engaged') return `You and ${otherName} arrived with a relationship already in motion. Every glance between you carries information the room cannot read.`;
+    if (type === 'siblings') return `You have known ${otherName} long enough to recognize the difference between ordinary discomfort and the moment they become truly alert.`;
+    if (type === 'close_friends') return `${otherName} is one of the few people whose instincts you trust without demanding an explanation first.`;
+  }
+  if (scene === 'ambush') {
+    if (['married','dating','engaged'].includes(type)) return `When the attack begins, you locate ${otherName} before you locate the shooter. The reflex is older than this investigation.`;
+    if (type === 'siblings') return `The old instinct returns immediately: find your sibling, then deal with everything else.`;
+    if (type === 'close_friends') return `You know how ${otherName} moves under pressure. That knowledge becomes tactical before either of you says a word.`;
+  }
+  if (scene === 'pogodin' && ['married','dating','engaged'].includes(type)) return `Whatever waits beneath Pogodin’s house, neither of you can pretend the other is expendable.`;
+  return null;
+}
 function personalizeStory(c, seat, shared) {
   const character = c.players?.[seat]?.character;
   if (!character || !shared) return shared;
-  const personal = [magdaEcho(character, c.current.scene), occupationEcho(character, c.current.scene), darkSecretEcho(character, c.current.scene)].filter(Boolean);
+  const personal = [relationshipEcho(c, seat, c.current.scene), magdaEcho(character, c.current.scene), occupationEcho(character, c.current.scene), familyEcho(character, c.current.scene), darkSecretEcho(character, c.current.scene)].filter(Boolean);
   if (c.players?.[seat]?.entry?.pending) personal.unshift(c.players[seat].entry.text);
   if (!personal.length) return shared;
   const text = [...shared.text];
@@ -653,6 +795,9 @@ function freeRoamCharacterEcho(character, location) {
   if (location === 'slavic' && ['stasi','kgb','journalist','black_marketeer'].includes(occ)) return 'The public organization and the private network do not line up. Your background makes the gap easier to see.';
   if ((location === 'hamburg_apartment' || location === 'berlin_apartment') && ['journalist','stasi','kgb'].includes(occ)) return 'You search less like a visitor than someone reconstructing another person’s habits: what is missing, what is staged, and what was meant to survive an unexpected absence.';
   if (character.origin?.country === 'germany' && /East Berlin|Saxony|Thuringia|Mecklenburg|Saxony-Anhalt|Brandenburg/.test(character.origin?.region || '') && location === 'records') return 'The basement bureaucracy is familiar in a way you do not enjoy. Reunification changed the letterhead faster than it changed the habits.';
+  if (character.family === 'community' && location === 'mantra') return 'You recognize the social architecture immediately: informal expertise, people introducing people, knowledge moving laterally rather than waiting for permission from an institution.';
+  if (character.family === 'independent' && location === 'berlin_apartment') return 'An empty room does not automatically read as tragic to you. What bothers you is not solitude but interruption: the signs that Magda did not leave on her own terms.';
+  if (character.family === 'chosen_family' && location === 'slavic') return 'You know the difference between community and hierarchy. Whatever binds the late-night group here, it is not simple fellowship.';
   return null;
 }
 
@@ -728,26 +873,27 @@ function lockChoices(c, seat) {
 }
 function resolveJoint(c, actions) {
   const s = c.current.scene, b = c.current.beat;
-  const a = actions.A?.id, d = actions.B?.id;
+  const participants = (c.storyLock.participants || Object.keys(actions)).filter(x => actions[x]);
+  const ids = participants.map(x => actions[x]?.id).filter(Boolean);
+  const same = ids.length > 1 && ids.every(x => x === ids[0]);
+  const has = id => ids.includes(id);
   let text = [];
   if (s === 'gold_plaque') {
-    if (b === 0) text = a === d ? ['You fall into the same rhythm without discussing it. The room gives up details slowly: who belongs, who is performing belonging, who watches instead of drinking.'] : ['You divide your attention. One of you works the room while the other watches its edges. Between you, the evening feels mapped rather than merely attended.'];
-    if (b === 1) text = (a === 'watch_russians' || d === 'watch_russians') ? ['The Russians are not merely uncomfortable. They are frightened of you, and trying badly not to show it. Magda notices their reaction and becomes frightened in turn.'] : ['Magda receives you with warmth strained by exhaustion. Behind her, the three men exchange a quick, private look and leave sooner than courtesy requires.'];
-    if (b === 2) text = ['Magda talks until the subject begins circling back on itself: Berlin, sleeplessness, the same nightmares, the feeling that something is waiting for her when she closes her eyes.', 'When you part, the evening feels unresolved. By the following night, both of you are ill.'];
+    if (b === 0) text = same ? ['You fall into the same rhythm without discussing it. The room gives up details slowly: who belongs, who is performing belonging, who watches instead of drinking.'] : ['You divide your attention. Different instincts map the same room from different angles until the evening feels observed rather than merely attended.'];
+    if (b === 1) text = has('watch_russians') ? ['The Russians are not merely uncomfortable. They are frightened of you, and trying badly not to show it. Magda notices their reaction and becomes frightened in turn.'] : ['Magda receives you with warmth strained by exhaustion. Behind her, the three men exchange a quick, private look and leave sooner than courtesy requires.'];
+    if (b === 2) text = ['Magda talks until the subject begins circling back on itself: Berlin, sleeplessness, the same nightmares, the feeling that something is waiting for her when she closes her eyes.', 'When you part, the evening feels unresolved. By the following night, everyone who stood close enough to her is ill.'];
   } else if (s === 'ambush') {
-    if (b === 0) text = (a === 'protect' || d === 'protect') ? ['One of you moves toward the other instead of toward safety. It costs distance and buys something more important: neither of you is isolated when the first shots force the street apart.'] : ['You react differently but not independently. One action creates the opening the other needs. The men by the van lose the clean advantage they expected.'];
+    if (b === 0) text = has('protect') ? ['Someone moves toward another protagonist instead of toward safety. It costs distance and buys something more important: nobody inside the lock is isolated when the first shots force the street apart.'] : ['You react differently but not independently. One action creates the opening another needs. The men by the van lose the clean advantage they expected.'];
     else text = ['The encounter breaks before it becomes a siege. The Dodge tears away through wet traffic, leaving brass, tire smoke, and the certainty that whoever sent those men knows where you are.'];
   } else if (s === 'pogodin') {
     if (b === 0) text = ['You choose your approach and commit. Security is professional, but routine has made it predictable. The mansion gives you a way in, though not a safe one.'];
-    if (b === 1) text = (a === 'rescue' || d === 'rescue') ? ['The people below are alive, barely. Helping them costs time and makes silence harder, but leaving them would mean accepting what this place was built to do.'] : ['You move through the house while the ritual below absorbs everyone\'s attention. The closer you get, the less the mansion feels like a home.'];
+    if (b === 1) text = has('rescue') ? ['The people below are alive, barely. Helping them costs time and makes silence harder, but leaving them would mean accepting what this place was built to do.'] : ['You move through the house while the ritual below absorbs everyone’s attention. The closer you get, the less the mansion feels like a home.'];
     if (b === 2) {
-      const performers = ['A','B'].filter(x => actions[x]?.id === 'perform_ritual');
+      const performers = participants.filter(x => actions[x]?.id === 'perform_ritual');
       if (performers.length) {
-        for (const seat of performers) c.flags.marked[seat] = true;
+        for (const st of performers) c.flags.marked[st] = true;
         text = ['The final words do not send the curse back the way you expected. The room opens onto something larger and colder than the basement beneath it.', 'Three shapes approach from beyond the ruined geometry. When the ordeal ends, the Russians are gone and something has touched the ones who completed the rite. You have not been cured. You have been noticed.'];
-      } else {
-        text = ['You refuse the ritual\'s promised answer. The choice saves you from one certainty and leaves every other problem intact. Somewhere beyond the walls, the three Russians are already moving.'];
-      }
+      } else text = ['You refuse the ritual’s promised answer. The choice saves you from one certainty and leaves every other problem intact. Somewhere beyond the walls, the three Russians are already moving.'];
     }
   }
   return text;
@@ -755,25 +901,34 @@ function resolveJoint(c, actions) {
 function publicView(c, uid, online = {}) {
   const seat = seatFor(c, uid);
   if (!seat) return null;
-  const other = otherSeat(seat);
   const own = c.players[seat];
-  const partner = c.players[other];
+  const other = primaryCounterpart(c, seat);
+  const partner = other ? c.players[other] : null;
+  const companions = otherSeats(c, seat).map(st => ({
+    seat: st,
+    characterId: c.players[st]?.characterId || null,
+    character: c.players[st]?.character ? { name:c.players[st].character.name, occupation:c.players[st].character.occupation, occupationName:c.players[st].character.occupationName } : null,
+    online: !!online[st], lastSeen:c.players[st]?.lastSeen || null,
+  }));
+  const participant = (c.storyLock.participants || []).includes(seat);
+  const relationshipList = Object.values(c.relationships || {}).filter(r => (r?.seats || []).includes(seat)).map(r => ({ ...r, otherSeat:(r.seats || []).find(x => x !== seat) || null }));
   const base = {
-    id: c.id, revision: c.revision, savedAt: c.savedAt || c.createdAt || null, saveReason: c.saveReason || 'campaign', phase: c.phase, seat,
-    player: { characterId: own?.characterId || null, character: own?.character || null, entry: own?.entry || null },
-    partner: partner ? { characterId: partner.characterId || null, character: partner.character ? { name: partner.character.name, occupation: partner.character.occupation, occupationName: partner.character.occupationName } : null, online: !!online[other], lastSeen: partner.lastSeen || null } : null,
-    current: c.current,
-    flags: { ...c.flags, marked: { self: !!c.flags.marked[seat], partnerKnown: false }, infection: { self: !!c.flags.infection[seat] } },
-    storyLock: { active: c.storyLock.active, gate: c.storyLock.gate, ready: c.storyLock.ready, submitted: !!c.storyLock.actions?.[seat], partnerSubmitted: !!c.storyLock.actions?.[other], lastResolution: c.storyLock.lastResolution },
-    freeRoam: { day: c.freeRoam.day, slots: c.freeRoam.slots[seat], partnerSlotsUsed: spentCount(c, other), lastResult: c.freeRoam.lastResult[seat] ? { ...c.freeRoam.lastResult[seat], characterEcho: freeRoamCharacterEcho(own?.character, c.freeRoam.lastResult[seat]?.location) } : null, locations: Object.fromEntries(Object.entries(FREE_ROAM_LOCATIONS).map(([id, x]) => [id, { name: x.name, art: x.art, frame: x.frame, actions: Object.fromEntries(Object.entries(x.actions).map(([aid,a]) => [aid,{ label:a.label, move:a.move, attribute:a.attribute || (MOVE_MAP[a.move]?.attribute || null) }])) }])) },
-    journal: { shared: c.journal.shared.map(x => ({ ...x, clue: CLUES[x.clueId] })), private: c.journal.private[seat].map(x => ({ ...x, clue: CLUES[x.clueId] })) },
-    invite: { canManage: seat === 'A', claimed: !!c.players.B, code: seat === 'A' && !c.players.B ? (c.invite || null) : null },
-    betaComplete: c.flags.betaComplete,
+    id:c.id, revision:c.revision, savedAt:c.savedAt || c.createdAt || null, saveReason:c.saveReason || 'campaign', phase:c.phase, seat,
+    player:{ characterId:own?.characterId || null, character:own?.character || null, entry:own?.entry || null, backgroundEditUsed:!!own?.backgroundEditUsed, backgroundEditAvailable:!!own?.character && !own?.backgroundEditUsed && !c.flags.ambushDone && ['lobby','free_roam'].includes(c.current.mode) },
+    partner: partner ? { seat:other, characterId:partner.characterId || null, character:partner.character ? { name:partner.character.name, occupation:partner.character.occupation, occupationName:partner.character.occupationName } : null, online:!!online[other], lastSeen:partner.lastSeen || null } : null,
+    companions,
+    party:{ occupied:occupiedSeats(c,false), withCharacters:occupiedSeats(c,true), maxSeats:3, minimumPrimary:['A','B'] },
+    relationships:relationshipList,
+    relationshipTypes:RELATIONSHIP_TYPES,
+    current:c.current,
+    flags:{ ...c.flags, marked:{ self:!!c.flags.marked[seat], partnerKnown:false }, infection:{ self:!!c.flags.infection[seat] } },
+    storyLock:{ active:c.storyLock.active, gate:c.storyLock.gate, ready:c.storyLock.ready, participants:c.storyLock.participants || [], participating:participant, submitted:!!c.storyLock.actions?.[seat], submissions:Object.fromEntries(SEATS.map(st=>[st,!!c.storyLock.actions?.[st]])), lastResolution:c.storyLock.lastResolution },
+    freeRoam:{ day:c.freeRoam.day, slots:c.freeRoam.slots[seat], partySlotsUsed:Object.fromEntries(otherSeats(c,seat).map(st=>[st,spentCount(c,st)])), partnerSlotsUsed:other?spentCount(c,other):0, lastResult:c.freeRoam.lastResult[seat] ? { ...c.freeRoam.lastResult[seat], characterEcho:freeRoamCharacterEcho(own?.character,c.freeRoam.lastResult[seat]?.location) } : null, locations:Object.fromEntries(Object.entries(FREE_ROAM_LOCATIONS).map(([id,x])=>[id,{name:x.name,art:x.art,frame:x.frame,actions:Object.fromEntries(Object.entries(x.actions).map(([aid,a])=>[aid,{label:a.label,move:a.move,attribute:a.attribute || (MOVE_MAP[a.move]?.attribute || null)}]))}])) },
+    journal:{ shared:c.journal.shared.map(x=>({...x,clue:CLUES[x.clueId]})), private:c.journal.private[seat].map(x=>({...x,clue:CLUES[x.clueId]})) },
+    invite:{ canManage:seat==='A', seats:{ B:{claimed:!!c.players.B,code:seat==='A'&&!c.players.B?(c.invites?.B || null):null}, C:{claimed:!!c.players.C,code:seat==='A'&&!c.players.C?(c.invites?.C || null):null} } },
+    betaComplete:c.flags.betaComplete,
   };
-  if (c.current.mode === 'story_lock') {
-    base.story = personalizeStory(c, seat, sharedStoryText(c));
-    base.choices = lockChoices(c, seat);
-  }
+  if (c.current.mode === 'story_lock' && participant) { base.story = personalizeStory(c,seat,sharedStoryText(c)); base.choices = lockChoices(c,seat); }
   return base;
 }
 
@@ -903,6 +1058,44 @@ export class AuthRoom {
     }
 
 
+    if (url.pathname === '/character-drafts') {
+      const uid = String(request.headers.get('x-chagidiel-user') || '');
+      if (!uid) return json({ error:'Authentication required.' },401);
+      if (request.method === 'GET') {
+        const listed = await this.state.storage.list({ prefix:characterDraftPrefix(uid) });
+        const drafts = [...listed.values()].map(publicDraftRecord).sort((a,b)=>Number(b.updatedAt||0)-Number(a.updatedAt||0));
+        return json({ ok:true, drafts });
+      }
+      if (request.method === 'POST') {
+        let body; try { body = await request.json(); } catch (_) { return json({ error:'Invalid request.' },400); }
+        const cleaned = cleanDraftPayload(body.draft);
+        if (cleaned.error) return json({ error:cleaned.error },400);
+        const listed = await this.state.storage.list({ prefix:characterDraftPrefix(uid) });
+        if (listed.size >= 20) return json({ error:'Character draft limit reached (20).' },409);
+        const now=Date.now(), id=randId('dr_');
+        const rec={ id, ownerUid:uid, draft:cleaned.draft, createdAt:now, updatedAt:now };
+        await this.state.storage.put(characterDraftKey(uid,id),rec);
+        return json({ ok:true, record:publicDraftRecord(rec) },201);
+      }
+      return json({ error:'Method not allowed.' },405);
+    }
+    const draftMatch = url.pathname.match(/^\/character-drafts\/(dr_[a-f0-9]+)$/);
+    if (draftMatch) {
+      const uid=String(request.headers.get('x-chagidiel-user') || '');
+      if (!uid) return json({ error:'Authentication required.' },401);
+      const id=draftMatch[1], key=characterDraftKey(uid,id), rec=await this.state.storage.get(key);
+      if (!rec) return json({ error:'Character draft not found.' },404);
+      if (request.method === 'GET') return json({ ok:true, record:publicDraftRecord(rec) });
+      if (request.method === 'PUT') {
+        let body; try { body=await request.json(); } catch (_) { return json({ error:'Invalid request.' },400); }
+        const cleaned=cleanDraftPayload(body.draft); if (cleaned.error) return json({ error:cleaned.error },400);
+        rec.draft=cleaned.draft; rec.updatedAt=Date.now(); await this.state.storage.put(key,rec);
+        return json({ ok:true, record:publicDraftRecord(rec) });
+      }
+      if (request.method === 'DELETE') { await this.state.storage.delete(key); return json({ ok:true, deleted:id }); }
+      return json({ error:'Method not allowed.' },405);
+    }
+
     if (url.pathname === '/characters') {
       const uid = String(request.headers.get('x-chagidiel-user') || '');
       if (!uid) return json({ error: 'Authentication required.' }, 401);
@@ -921,6 +1114,7 @@ export class AuthRoom {
         const id = randId('pc_');
         const rec = { id, ownerUid: uid, character: cleaned.character, createdAt: now, updatedAt: now };
         await this.state.storage.put(characterStorageKey(uid,id), rec);
+        if (validDraftId(body.draftId)) await this.state.storage.delete(characterDraftKey(uid,body.draftId));
         return json({ ok: true, record: publicCharacterRecord(rec) }, 201);
       }
       return json({ error: 'Method not allowed.' }, 405);
@@ -1071,7 +1265,7 @@ export class CampaignRoom {
   constructor(state, env) {
     this.state = state; this.env = env; this.sockets = new Map();
   }
-  async load() { return await this.state.storage.get('campaign'); }
+  async load() { return ensureCampaignShape(await this.state.storage.get('campaign')); }
   async save(c, reason = 'progress') {
     c.revision = Number(c.revision || 0) + 1;
     c.savedAt = Date.now();
@@ -1080,7 +1274,7 @@ export class CampaignRoom {
     return c;
   }
   presence() {
-    const out = { A: false, B: false };
+    const out = { A:false, B:false, C:false };
     for (const [seat, set] of this.sockets) out[seat] = set.size > 0;
     return out;
   }
@@ -1107,28 +1301,32 @@ export class CampaignRoom {
     if (!c) return json({ error: 'Campaign does not exist.' }, 404);
     if (url.pathname === '/join') {
       const b = await request.json();
-      let seat = seatFor(c, uid);
+      let seat = seatFor(c,uid);
       if (!seat) {
-        if (c.players.B) return json({ error: 'Campaign already has two players.' }, 409);
-        if (String(b.invite || '') !== String(c.invite || '')) return json({ error: 'Invalid invite code.' }, 403);
-        c.players.B = { uid, contact, method, characterId: null, character: null, characterHistory: [], entry: null, lastSeen: Date.now(), prefs: { storyAlerts: true, evidenceAlerts: true } };
-        c.invite = null; seat = 'B'; pushLog(c, 'player_joined', seat); await this.save(c, 'player_joined');
+        const code=String(b.invite || '').toUpperCase();
+        let target=null;
+        if (!c.players.B && code && code === String(c.invites?.B || '').toUpperCase()) target='B';
+        else if (!c.players.C && code && code === String(c.invites?.C || '').toUpperCase()) target='C';
+        if (!target) return json({ error:'Invalid, expired, or already-claimed invite code.' },403);
+        c.players[target]=playerRecord({uid,contact,method});
+        c.invites[target]=null; seat=target; pushLog(c,'player_joined',seat); await this.save(c,'player_joined');
       }
-      this.broadcast(c); return json({ ok: true, seat, state: publicView(c, uid, this.presence()) });
+      this.broadcast(c); return json({ ok:true, seat, state:publicView(c,uid,this.presence()) });
     }
-    const seat = seatFor(c, uid);
-    if (!seat) return json({ error: 'You are not a member of this campaign.' }, 403);
-    c.players[seat].lastSeen = Date.now();
+    const seat = seatFor(c,uid);
+    if (!seat) return json({ error:'You are not a member of this campaign.' },403);
+    c.players[seat].lastSeen=Date.now();
     if (url.pathname === '/invite') {
-      if (seat !== 'A') return json({ error: 'Only Seat A can manage the campaign invitation.' }, 403);
-      if (request.method === 'GET') return json({ ok: true, campaignId: c.id, claimed: !!c.players.B, invite: c.players.B ? null : (c.invite || null) });
-      if (request.method !== 'POST') return json({ error: 'Method not allowed.' }, 405);
-      if (c.players.B) return json({ error: 'Seat B has already claimed this campaign. The invitation is closed.' }, 409);
-      c.invite = randId('').slice(0, 10).toUpperCase();
-      pushLog(c, 'invite_regenerated', seat);
-      await this.save(c, 'invite_regenerated');
-      this.broadcast(c);
-      return json({ ok: true, campaignId: c.id, claimed: false, invite: c.invite });
+      if (seat !== 'A') return json({ error:'Only Seat A can manage campaign invitations.' },403);
+      if (request.method === 'GET') return json({ ok:true, campaignId:c.id, seats:{ B:{claimed:!!c.players.B,invite:c.players.B?null:(c.invites?.B || null)}, C:{claimed:!!c.players.C,invite:c.players.C?null:(c.invites?.C || null)} } });
+      if (request.method !== 'POST') return json({ error:'Method not allowed.' },405);
+      let body={}; try { body=await request.json(); } catch (_) {}
+      const target=String(body.seat || 'B').toUpperCase();
+      if (!['B','C'].includes(target)) return json({ error:'Invite seat must be B or C.' },400);
+      if (c.players[target]) return json({ error:`Seat ${target} has already been claimed.` },409);
+      c.invites[target]=randId('').slice(0,10).toUpperCase();
+      pushLog(c,'invite_regenerated',seat,{target}); await this.save(c,'invite_regenerated'); this.broadcast(c);
+      return json({ ok:true, campaignId:c.id, seat:target, claimed:false, invite:c.invites[target] });
     }
     if (url.pathname === '/state') {
       c.lastOpenedAt = Date.now();
@@ -1146,7 +1344,7 @@ export class CampaignRoom {
     }
     if (url.pathname === '/action') {
       const b = await request.json();
-      const other = otherSeat(seat);
+      const others = otherSeats(c,seat);
       if (!Array.isArray(c.processedActions)) c.processedActions = [];
       const clientActionId = String(b.clientActionId || '').slice(0, 120);
       if (clientActionId && c.processedActions.includes(clientActionId)) return json({ ok: true, deduplicated: true, state: publicView(c, uid, this.presence()) });
@@ -1188,57 +1386,94 @@ export class CampaignRoom {
             pushLog(c, 'character_set', seat, { characterId: incomingId, occupation: cleaned.character.occupation, origin: cleaned.character.origin?.country, region: cleaned.character.origin?.region });
           }
         }
-        if (c.players.A?.character && c.players.B?.character && c.current.mode === 'lobby') { storyGate(c, 'gold_plaque', false); c.phase = 'chapter1'; }
+        if (c.players.A?.character && c.players.B?.character && (!c.players.C || c.players.C.character) && c.current.mode === 'lobby') { storyGate(c,'gold_plaque',false); c.phase='chapter1'; }
+      } else if (b.type === 'revise_background') {
+        const player=c.players[seat];
+        if (!player.character) return json({ error:'No active protagonist to revise.' },409);
+        if (player.backgroundEditUsed) return json({ error:'This campaign background revision has already been used.' },409);
+        if (c.flags.ambushDone || !['lobby','free_roam'].includes(c.current.mode)) return json({ error:'Background revision is only available between scenes early in Chapter I, before the first ambush.' },409);
+        const cleaned=cleanCharacter(b.character); if (cleaned.error) return json({ error:cleaned.error },400);
+        const revised=cleaned.character, current=player.character;
+        const mechanical={ occupation:current.occupation, occupationName:current.occupationName, occupationArchetype:current.occupationArchetype, languages:current.languages, darkSecret:current.darkSecret, darkSecretName:current.darkSecretName, attributes:current.attributes, advantages:current.advantages || [], disadvantages:current.disadvantages || [], stability:current.stability || 'Composed', wounds:Array.isArray(current.wounds)?current.wounds:[] };
+        player.character={ ...revised, ...mechanical };
+        player.backgroundEditUsed=true;
+        pushLog(c,'background_revised',seat,{characterId:player.characterId,name:player.character.name});
+      } else if (b.type === 'relationship_propose') {
+        const target=String(b.targetSeat || '').toUpperCase(), type=String(b.relationshipType || '');
+        if (!SEATS.includes(target) || target===seat || !c.players[target]?.character) return json({ error:'Choose another active protagonist.' },400);
+        if (!RELATIONSHIP_TYPES[type]) return json({ error:'Choose a valid relationship.' },400);
+        const key=relationshipKey(seat,target), now=Date.now();
+        c.relationships[key]={ key, seats:[seat,target].sort(), type, label:RELATIONSHIP_TYPES[type], proposer:seat, status:'pending', acceptedBy:{ [seat]:true, [target]:false }, proposedAt:now, updatedAt:now };
+        pushLog(c,'relationship_proposed',seat,{target,type});
+        if (!this.presence()[target]) await safeNotify(this.env,c.players[target],`${c.players[seat]?.character?.name || 'Another protagonist'} proposed a shared character relationship for your approval.`);
+      } else if (b.type === 'relationship_respond') {
+        const target=String(b.otherSeat || '').toUpperCase(), key=relationshipKey(seat,target), rel=c.relationships[key];
+        if (!rel || rel.status!=='pending' || rel.proposer===seat) return json({ error:'No pending relationship proposal is waiting for you.' },409);
+        const accept=!!b.accept;
+        rel.acceptedBy={ ...(rel.acceptedBy || {}), [seat]:accept }; rel.status=accept?'accepted':'declined'; rel.respondedAt=Date.now(); rel.updatedAt=Date.now();
+        pushLog(c,accept?'relationship_accepted':'relationship_declined',seat,{other:target,type:rel.type});
       } else if (b.type === 'ack_character_entry') {
         if (c.players[seat].entry) c.players[seat].entry.pending = false;
       } else if (b.type === 'story_gate_ready') {
-        if (c.current.mode !== 'story_gate') return json({ error: 'No Story Lock gate is active.' }, 409);
-        if (c.storyLock.gate?.forced) c.storyLock.gate.acknowledged[seat] = true; else c.storyLock.ready[seat] = true;
-        pushLog(c, 'story_gate_ready', seat, { scene: c.current.scene });
-        const both = c.storyLock.gate?.forced ? (c.storyLock.gate.acknowledged.A && c.storyLock.gate.acknowledged.B) : (c.storyLock.ready.A && c.storyLock.ready.B);
-        if (both) activateStory(c, c.current.scene);
-        else if (!this.presence()[other]) await safeNotify(this.env, c.players[other], 'A Story Lock is waiting for your protagonist.');
+        if (c.current.mode !== 'story_gate') return json({ error:'No Story Lock gate is active.' },409);
+        if (!c.players[seat]?.character) return json({ error:'Choose a protagonist before entering the Story Lock.' },409);
+        const forced=!!c.storyLock.gate?.forced;
+        if (forced) c.storyLock.gate.acknowledged[seat]=true; else c.storyLock.ready[seat]=true;
+        pushLog(c,'story_gate_ready',seat,{scene:c.current.scene});
+        const gate=c.storyLock.gate, eligible=occupiedSeats(c,true);
+        const readyMap=forced?gate.acknowledged:c.storyLock.ready;
+        const readySeats=eligible.filter(st=>!!readyMap[st]);
+        let activate=false, participants=[];
+        if (gate.requirement === 'full_party') {
+          const occupied=occupiedSeats(c,false);
+          const missingCharacters=occupied.filter(st=>!c.players?.[st]?.character);
+          const required=occupied.filter(st=>!!c.players?.[st]?.character);
+          activate=missingCharacters.length===0 && required.length>=2 && required.every(st=>!!readyMap[st]);
+          participants=required;
+        } else {
+          activate=readySeats.length>=2; participants=readySeats;
+        }
+        if (activate) activateStory(c,c.current.scene,participants);
+        else for (const st of otherSeats(c,seat,true)) if (!this.presence()[st]) await safeNotify(this.env,c.players[st],gate.requirement==='full_party'?'A major Story Lock requires the full active party.':'A Story Lock can begin when any two protagonists are ready.');
       } else if (b.type === 'story_gate_cancel') {
         if (c.current.mode === 'story_gate' && !c.storyLock.gate?.forced) c.storyLock.ready[seat] = false;
       } else if (b.type === 'lock_action') {
-        if (c.current.mode !== 'story_lock') return json({ error: 'Story Lock is not active.' }, 409);
-        if (c.storyLock.actions[seat]) return json({ error: 'Your action is already locked.' }, 409);
-        const allowed = lockChoices(c, seat); const selected = allowed.find(x => x.id === b.actionId);
-        if (!selected) return json({ error: 'That action is not available.' }, 400);
-        let roll = null;
-        if (selected.move === 'improvised') {
-          const modifier = attrValue(c.players[seat].character, selected.attribute);
-          roll = { move: 'Improvised Move', attribute: selected.attribute, ...roll2d10(modifier) };
-        } else if (selected.move) roll = rollFor(c.players[seat].character, selected.move);
-        c.storyLock.actions[seat] = { id: selected.id, label: selected.label, move: selected.move || null, roll };
-        pushLog(c, 'joint_action_submitted', seat, { scene: c.current.scene, beat: c.current.beat, action: selected.id, roll });
-        if (c.storyLock.actions.A && c.storyLock.actions.B) {
-          const resolution = resolveJoint(c, c.storyLock.actions);
-          const rolls = { A: c.storyLock.actions.A.roll, B: c.storyLock.actions.B.roll };
-          if (c.current.scene === 'ambush') {
-            for (const st of ['A','B']) if (rolls[st]?.outcome === 'failure' && !c.players[st].character.wounds.includes('Serious Wound')) c.players[st].character.wounds.push('Serious Wound');
-          }
-          c.storyLock.lastResolution = { text: resolution, actions: { A: c.storyLock.actions.A, B: c.storyLock.actions.B }, at: Date.now() };
-          const scene = c.current.scene, beat = c.current.beat;
-          c.storyLock.actions = {};
-          if (scene === 'gold_plaque' && beat < 2) c.current.beat++;
-          else if (scene === 'gold_plaque') { c.flags.goldPlaqueDone = true; c.flags.infection.A = true; c.flags.infection.B = true; finishStory(c); }
-          else if (scene === 'ambush' && beat < 1) c.current.beat++;
-          else if (scene === 'ambush') { c.flags.ambushDone = true; finishStory(c); }
-          else if (scene === 'pogodin' && beat < 2) c.current.beat++;
-          else if (scene === 'pogodin') { c.flags.betaComplete = true; c.phase = 'beta_complete'; c.current = { mode: 'epilogue', scene: 'chapter1_boundary', beat: 0 }; c.storyLock.active = false; }
-          pushLog(c, 'joint_action_resolved', null, { scene, beat, rolls });
-        } else if (!this.presence()[other]) await safeNotify(this.env, c.players[other], 'Your decision is required in the current Story Lock.');
+        if (c.current.mode !== 'story_lock' || !(c.storyLock.participants || []).includes(seat)) return json({ error:'Your protagonist is not participating in this Story Lock.' },409);
+        if (c.storyLock.actions[seat]) return json({ error:'Your action is already locked.' },409);
+        const allowed=lockChoices(c,seat), selected=allowed.find(x=>x.id===b.actionId); if (!selected) return json({ error:'That action is not available.' },400);
+        let roll=null;
+        if (selected.move==='improvised') { const modifier=attrValue(c.players[seat].character,selected.attribute); roll={move:'Improvised Move',attribute:selected.attribute,...roll2d10(modifier)}; }
+        else if (selected.move) roll=rollFor(c.players[seat].character,selected.move);
+        c.storyLock.actions[seat]={ id:selected.id,label:selected.label,move:selected.move || null,roll };
+        pushLog(c,'joint_action_submitted',seat,{scene:c.current.scene,beat:c.current.beat,action:selected.id,roll});
+        const participants=(c.storyLock.participants || []).filter(st=>c.players[st]?.character);
+        const allSubmitted=participants.length>=2 && participants.every(st=>!!c.storyLock.actions[st]);
+        if (allSubmitted) {
+          const resolution=resolveJoint(c,c.storyLock.actions), rolls=Object.fromEntries(participants.map(st=>[st,c.storyLock.actions[st].roll]));
+          if (c.current.scene==='ambush') for (const st of participants) if (rolls[st]?.outcome==='failure'&&!c.players[st].character.wounds.includes('Serious Wound')) c.players[st].character.wounds.push('Serious Wound');
+          c.storyLock.lastResolution={ text:resolution, actions:Object.fromEntries(participants.map(st=>[st,c.storyLock.actions[st]])), participants:[...participants], at:Date.now() };
+          const scene=c.current.scene, beat=c.current.beat; c.storyLock.actions={};
+          if (scene==='gold_plaque'&&beat<2) c.current.beat++;
+          else if (scene==='gold_plaque') { c.flags.goldPlaqueDone=true; for (const st of participants) c.flags.infection[st]=true; finishStory(c); }
+          else if (scene==='ambush'&&beat<1) c.current.beat++;
+          else if (scene==='ambush') { c.flags.ambushDone=true; finishStory(c); }
+          else if (scene==='pogodin'&&beat<2) c.current.beat++;
+          else if (scene==='pogodin') { c.flags.betaComplete=true; c.phase='beta_complete'; c.current={mode:'epilogue',scene:'chapter1_boundary',beat:0}; c.storyLock.active=false; c.storyLock.participants=[]; }
+          pushLog(c,'joint_action_resolved',null,{scene,beat,rolls,participants});
+        } else for (const st of participants.filter(x=>x!==seat)) if (!c.storyLock.actions[st]&&!this.presence()[st]) await safeNotify(this.env,c.players[st],'Your decision is required in the current Story Lock.');
       } else if (b.type === 'free_roam_action') {
-        if (c.current.mode !== 'free_roam') return json({ error: 'Free Roam is not available during Story Lock progression.' }, 409);
+        const lockedParticipant=c.current.mode==='story_lock'&&(c.storyLock.participants || []).includes(seat);
+        const committedAtGate=c.current.mode==='story_gate'&&!!(c.storyLock.gate?.forced?c.storyLock.gate?.acknowledged?.[seat]:c.storyLock.ready?.[seat]);
+        if (lockedParticipant || committedAtGate || (c.current.mode!=='free_roam' && c.current.mode!=='story_gate' && c.current.mode!=='story_lock')) return json({ error:'Free Roam is not available to this protagonist right now.' },409);
         const slot = nextSlot(c, seat); if (slot < 0) return json({ error: 'You have used all Free Roam time for this beta day.' }, 409);
         const loc = FREE_ROAM_LOCATIONS[b.location]; const act = loc?.actions?.[b.actionId]; if (!loc || !act) return json({ error: 'That Free Roam action is not available.' }, 400);
         let roll = null;
         if (act.move) roll = rollFor(c.players[seat].character, act.move);
         const result = { id: randId('fr_'), location: b.location, locationName: loc.name, actionId: b.actionId, label: act.label, prose: act.prose, clueId: act.clue, roll, art: loc.art, frame: loc.frame, at: Date.now() };
         c.freeRoam.slots[seat][slot] = result.id; c.freeRoam.lastResult[seat] = result; addPrivateClue(c, seat, act.clue, loc.name); pushLog(c, 'free_roam_action', seat, { location: b.location, action: b.actionId, roll });
-        if (!c.flags.ambushDone && spentCount(c, 'A') >= 1 && spentCount(c, 'B') >= 1) { storyGate(c, 'ambush', true); await safeNotify(this.env, c.players[other], 'An event has interrupted Free Roam. Open Chagidiel when you can.'); }
-        else if (c.flags.ambushDone && !c.flags.pogodinAvailable && (sharedClueCount(c) >= 3 || (spentCount(c,'A') >= 2 && spentCount(c,'B') >= 2))) { c.flags.pogodinAvailable = true; storyGate(c, 'pogodin', false); }
+        const eligible=occupiedSeats(c,true), oneSlot=eligible.filter(st=>spentCount(c,st)>=1).length, twoSlots=eligible.filter(st=>spentCount(c,st)>=2).length;
+        if (c.current.mode==='free_roam'&&!c.flags.ambushDone&&oneSlot>=2) { storyGate(c,'ambush',true); for (const st of otherSeats(c,seat,true)) if (!this.presence()[st]) await safeNotify(this.env,c.players[st],'An event has interrupted Free Roam. Open Chagidiel when you can.'); }
+        else if (c.current.mode==='free_roam'&&c.flags.ambushDone&&!c.flags.pogodinAvailable&&(sharedClueCount(c)>=3||twoSlots>=2)) { c.flags.pogodinAvailable=true; storyGate(c,'pogodin',false); }
       } else if (b.type === 'share_clue') {
         const clueId = String(b.clueId || ''); if (!c.journal.private[seat].some(x => x.clueId === clueId)) return json({ error: 'You do not have that clue.' }, 400);
         if (!c.journal.shared.some(x => x.clueId === clueId)) c.journal.shared.push({ clueId, sourceSeat: seat, source: b.source || '', at: Date.now() }); pushLog(c, 'clue_shared', seat, { clueId });
@@ -1249,7 +1484,7 @@ export class CampaignRoom {
       } else return json({ error: 'Unknown action.' }, 400);
       // A replacement character's entry note is shown on the first rendered campaign page.
       // After that protagonist takes any normal action, consider the handoff integrated into play.
-      if (!['ack_character_entry','assign_character','set_character','edit_character','story_gate_ready','story_gate_cancel'].includes(b.type) && c.players[seat].entry?.pending) c.players[seat].entry.pending = false;
+      if (!['ack_character_entry','assign_character','set_character','edit_character','revise_background','relationship_propose','relationship_respond','story_gate_ready','story_gate_cancel'].includes(b.type) && c.players[seat].entry?.pending) c.players[seat].entry.pending = false;
       if (clientActionId) { c.processedActions.push(clientActionId); if (c.processedActions.length > 80) c.processedActions = c.processedActions.slice(-80); }
       await this.save(c, b.type || 'action'); this.broadcast(c); return json({ ok: true, state: publicView(c, uid, this.presence()) });
     }
@@ -1257,6 +1492,11 @@ export class CampaignRoom {
   }
 }
 
+function elevenKeyInfo(env) {
+  const options=[['ELEVENLABS_API_KEY',env.ELEVENLABS_API_KEY],['SANGRIS_ELEVENLABS_API_KEY',env.SANGRIS_ELEVENLABS_API_KEY],['ELEVENLABS_KEY',env.ELEVENLABS_KEY],['XI_API_KEY',env.XI_API_KEY]];
+  const found=options.find(([,value])=>String(value || '').trim());
+  return found ? { key:String(found[1]).trim(), binding:found[0] } : { key:'', binding:null };
+}
 function safeVoiceId(value) { const v = String(value || '').trim(); return /^[A-Za-z0-9_-]{10,64}$/.test(v) ? v : DEFAULT_VOICE_ID; }
 async function shortHash(text) { const d = await sha(text); return [...d.slice(0, 10)].map(x => x.toString(16).padStart(2,'0')).join(''); }
 let sharedFeaturedCache = { at: 0, voices: [] };
@@ -1264,13 +1504,14 @@ function normalizedVoiceName(value) {
   return String(value || '').toLowerCase().replace(/[—–]/g, '-').replace(/[^a-z0-9]+/g, ' ').trim();
 }
 async function resolveSharedFeaturedVoices(env) {
-  if (!env.ELEVENLABS_API_KEY) return [];
+  const key=elevenKeyInfo(env).key;
+  if (!key) return [];
   const now = Date.now();
   if (sharedFeaturedCache.at && now - sharedFeaturedCache.at < 10 * 60 * 1000) return sharedFeaturedCache.voices;
   const found = [];
   for (const spec of FEATURED_SHARED_SEARCHES) {
     try {
-      const response = await fetch(`${ELEVEN_BASE}/v1/shared-voices?page_size=30&search=${encodeURIComponent(spec.search)}`, { headers: { 'xi-api-key': env.ELEVENLABS_API_KEY } });
+      const response = await fetch(`${ELEVEN_BASE}/v1/shared-voices?page_size=30&search=${encodeURIComponent(spec.search)}`, { headers: { 'xi-api-key': key } });
       if (!response.ok) continue;
       const data = await response.json();
       const target = normalizedVoiceName(spec.exactName);
@@ -1294,8 +1535,9 @@ async function resolveSharedFeaturedVoices(env) {
   return found;
 }
 async function listVoices(env) {
-  if (!env.ELEVENLABS_API_KEY) return FEATURED_VOICES;
-  const r = await fetch(`${ELEVEN_BASE}/v2/voices?page_size=100&sort=name&sort_direction=asc&include_total_count=false`, { headers: { 'xi-api-key': env.ELEVENLABS_API_KEY } });
+  const key=elevenKeyInfo(env).key;
+  if (!key) return FEATURED_VOICES;
+  const r = await fetch(`${ELEVEN_BASE}/v2/voices?page_size=100&sort=name&sort_direction=asc&include_total_count=false`, { headers: { 'xi-api-key': key } });
   if (!r.ok) throw new Error(`ElevenLabs voices request failed (${r.status})`);
   const d = await r.json();
   const voices = (d.voices || []).map(v => ({ voice_id: v.voice_id, name: v.name || 'Unnamed voice', category: v.category || '', description: v.description || '', labels: v.labels || {}, preview_url: v.preview_url || null }));
@@ -1337,8 +1579,9 @@ async function elevenTTSWithRetry(url, options) {
   }
   return last;
 }
-async function tts(env, voiceId, text, key) {
-  if (!env.ELEVENLABS_API_KEY) return json({ error: 'ElevenLabs secret is not configured.' }, 503);
+async function tts(env, voiceId, text, cacheKey) {
+  const apiKey=elevenKeyInfo(env).key;
+  if (!apiKey) return json({ error:'ElevenLabs secret is not configured on this Worker. You may reuse the same API key value as Sangris.' },503);
   if (!env.NARRATION_AUDIO) return json({ error: 'Narration R2 binding is not configured.' }, 503);
   const cleaned = String(text || '').replace(/\r/g,'').trim();
   if (!cleaned || cleaned.length > 18000) return json({ error: 'Invalid narration text.' }, 400);
@@ -1347,10 +1590,10 @@ ${AUDIO_PROFILE_VERSION}
 ${JSON.stringify(VOICE_SETTINGS)}
 ${voiceId}
 ${cleaned}`);
-  const objectKey = `chagidiel/${voiceId}/${key}_${version}.mp3`;
+  const objectKey = `chagidiel/${voiceId}/${cacheKey}_${version}.mp3`;
   const cached = await env.NARRATION_AUDIO.get(objectKey);
   if (cached) { const h = new Headers(); cached.writeHttpMetadata(h); h.set('content-type','audio/mpeg'); h.set('x-narration-cache','HIT'); return new Response(cached.body,{headers:h}); }
-  const r = await elevenTTSWithRetry(`${ELEVEN_BASE}/v1/text-to-speech/${encodeURIComponent(voiceId)}?output_format=${OUTPUT_FORMAT}`, { method:'POST', headers:{'xi-api-key':env.ELEVENLABS_API_KEY,'content-type':'application/json',accept:'audio/mpeg'}, body:JSON.stringify({text:cleaned,model_id:MODEL_ID,voice_settings:VOICE_SETTINGS}) });
+  const r = await elevenTTSWithRetry(`${ELEVEN_BASE}/v1/text-to-speech/${encodeURIComponent(voiceId)}?output_format=${OUTPUT_FORMAT}`, { method:'POST', headers:{'xi-api-key':apiKey,'content-type':'application/json',accept:'audio/mpeg'}, body:JSON.stringify({text:cleaned,model_id:MODEL_ID,voice_settings:VOICE_SETTINGS}) });
   if (!r?.ok) return json({ error:'ElevenLabs generation failed.', status:r?.status || 502, detail:r ? (await r.text()).slice(0,500) : 'No response from ElevenLabs.' },502);
   const audio = await r.arrayBuffer();
   await env.NARRATION_AUDIO.put(objectKey,audio,{httpMetadata:{contentType:'audio/mpeg'}});
@@ -1378,8 +1621,9 @@ export default {
     if (url.pathname === '/api/health') {
       const smsLoginMode = twilioVerifyConfigured(env) ? 'twilio_verify' : (twilioMessagingConfigured(env) ? 'twilio_messages' : null);
       return json({
-        ok:true, build:'chagidiel-beta-7-campaign-invitations',
-        elevenlabsConfigured:!!env.ELEVENLABS_API_KEY,
+        ok:true, build:'chagidiel-beta-8-drafts-third-seat-relationships',
+        elevenlabsConfigured:!!elevenKeyInfo(env).key,
+        elevenlabsBinding:elevenKeyInfo(env).binding,
         r2Configured:!!env.NARRATION_AUDIO,
         authSecretConfigured:!!env.AUTH_SECRET,
         emailConfigured:!!(env.RESEND_API_KEY&&env.RESEND_FROM),
@@ -1398,7 +1642,11 @@ export default {
         accountCampaignResume:true,
         sangrisFeaturedVoices:true,
         readAloudProfile:AUDIO_PROFILE_VERSION,
-        campaignInviteManagement:true
+        campaignInviteManagement:true,
+        characterDrafts:true,
+        optionalThirdSeat:true,
+        relationshipConsent:true,
+        oneTimeBackgroundRevision:true
       },200,{'cache-control':'no-store'});
     }
     if (url.pathname === '/api/config') return json({ vapidPublicKey: env.VAPID_PUBLIC_KEY || null, pushDelivery: false });
@@ -1424,6 +1672,17 @@ export default {
       const headers = new Headers({ 'x-chagidiel-user': user.uid });
       if (request.method === 'POST') headers.set('content-type','application/json');
       return authStub(env).fetch('https://auth/characters', { method: request.method, headers, body: request.method === 'POST' ? await request.text() : undefined });
+    }
+    if (url.pathname === '/api/character-drafts' && ['GET','POST'].includes(request.method)) {
+      const user=await authFromRequest(request,env,url); if(!user)return json({error:'Sign in required.'},401);
+      const headers=new Headers({'x-chagidiel-user':user.uid}); if(request.method==='POST')headers.set('content-type','application/json');
+      return authStub(env).fetch('https://auth/character-drafts',{method:request.method,headers,body:request.method==='POST'?await request.text():undefined});
+    }
+    const draftApiMatch=url.pathname.match(/^\/api\/character-drafts\/(dr_[a-f0-9]+)$/);
+    if (draftApiMatch && ['GET','PUT','DELETE'].includes(request.method)) {
+      const user=await authFromRequest(request,env,url); if(!user)return json({error:'Sign in required.'},401);
+      const headers=new Headers({'x-chagidiel-user':user.uid}); if(request.method==='PUT')headers.set('content-type','application/json');
+      return authStub(env).fetch(`https://auth/character-drafts/${draftApiMatch[1]}`,{method:request.method,headers,body:request.method==='PUT'?await request.text():undefined});
     }
     const characterApiMatch = url.pathname.match(/^\/api\/characters\/(pc_[a-f0-9]+)$/);
     if (characterApiMatch && ['GET','PUT','DELETE'].includes(request.method)) {
@@ -1481,7 +1740,8 @@ export default {
     if (inviteMatch && ['GET','POST'].includes(request.method)) {
       const user = await authFromRequest(request,env,url); if(!user) return json({error:'Authentication required.'},401);
       const id=inviteMatch[1];
-      return forwardCampaign(request,env,id,'/invite',user,request.method==='POST'?{}:null);
+      if(request.method==='POST'){let b={};try{b=await request.json()}catch(_){};return forwardCampaign(request,env,id,'/invite',user,b)}
+      return forwardCampaign(request,env,id,'/invite',user,null);
     }
     const m = url.pathname.match(/^\/api\/campaigns\/(c_[a-f0-9]+)\/(state|action|ws)$/);
     if (m) {

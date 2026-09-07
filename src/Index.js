@@ -12,7 +12,7 @@ const FEATURED_VOICES = [
     voice_id: DEFAULT_VOICE_ID,
     name: 'Alice — Soothing, Calm and Youthful',
     category: 'featured',
-    description: 'Calm featured narrator and Chagidiel default.',
+    description: 'Calm featured narrator and The Black Madonna default.',
     labels: { use_case: 'narrative_story', sangris: 'featured' },
     preview_url: null,
     sangris_featured_rank: 0,
@@ -289,17 +289,17 @@ async function sendEmail(env, to, content, purpose = 'alert') {
   let html;
   if (purpose === 'reset') {
     const resetUrl = String(content);
-    subject = 'Reset your Chagidiel password';
-    text = `A password reset was requested for your Chagidiel account. Open this link within 60 minutes: ${resetUrl}\n\nIf you did not request this, you can ignore this message.`;
-    html = `<div style="background:#090807;color:#d8d0bc;padding:28px;font-family:Georgia,serif"><div style="color:#8f1f22;letter-spacing:.18em;text-transform:uppercase;font-size:12px">Chagidiel</div><h1 style="font-weight:400">Password reset</h1><p>A password reset was requested for your account.</p><p><a style="display:inline-block;padding:12px 16px;background:#551317;color:#fff;text-decoration:none" href="${escapeHtml(resetUrl)}">Reset password</a></p><p style="color:#9c9588">This link expires in 60 minutes. If you did not request it, you can ignore this message.</p></div>`;
+    subject = 'Reset your Black Madonna password';
+    text = `A password reset was requested for your Black Madonna account. Open this link within 60 minutes: ${resetUrl}\n\nIf you did not request this, you can ignore this message.`;
+    html = `<div style="background:#090807;color:#d8d0bc;padding:28px;font-family:Georgia,serif"><div style="color:#8f1f22;letter-spacing:.18em;text-transform:uppercase;font-size:12px">The Black Madonna</div><h1 style="font-weight:400">Password reset</h1><p>A password reset was requested for your account.</p><p><a style="display:inline-block;padding:12px 16px;background:#551317;color:#fff;text-decoration:none" href="${escapeHtml(resetUrl)}">Reset password</a></p><p style="color:#9c9588">This link expires in 60 minutes. If you did not request it, you can ignore this message.</p></div>`;
   } else if (purpose === 'login') {
-    subject = 'Your Chagidiel login code';
-    text = `Your Chagidiel login code is ${content}. It expires in 10 minutes.`;
-    html = `<div style="background:#090807;color:#d8d0bc;padding:28px;font-family:Georgia,serif"><div style="color:#8f1f22;letter-spacing:.18em;text-transform:uppercase;font-size:12px">Chagidiel</div><h1 style="font-weight:400">Your login code</h1><p>Enter this six-digit code to continue:</p><div style="font-size:32px;letter-spacing:.22em;color:#fff;margin:24px 0">${escapeHtml(content)}</div><p style="color:#9c9588">This code expires in 10 minutes. If you did not request it, you can ignore this message.</p></div>`;
+    subject = 'Your Black Madonna login code';
+    text = `Your Black Madonna login code is ${content}. It expires in 10 minutes.`;
+    html = `<div style="background:#090807;color:#d8d0bc;padding:28px;font-family:Georgia,serif"><div style="color:#8f1f22;letter-spacing:.18em;text-transform:uppercase;font-size:12px">The Black Madonna</div><h1 style="font-weight:400">Your login code</h1><p>Enter this six-digit code to continue:</p><div style="font-size:32px;letter-spacing:.22em;color:#fff;margin:24px 0">${escapeHtml(content)}</div><p style="color:#9c9588">This code expires in 10 minutes. If you did not request it, you can ignore this message.</p></div>`;
   } else {
-    subject = 'Chagidiel - your protagonist is needed';
+    subject = 'The Black Madonna - your protagonist is needed';
     text = String(content);
-    html = `<div style="background:#090807;color:#d8d0bc;padding:28px;font-family:Georgia,serif"><div style="color:#8f1f22;letter-spacing:.18em;text-transform:uppercase;font-size:12px">Chagidiel</div><p>${escapeHtml(content)}</p></div>`;
+    html = `<div style="background:#090807;color:#d8d0bc;padding:28px;font-family:Georgia,serif"><div style="color:#8f1f22;letter-spacing:.18em;text-transform:uppercase;font-size:12px">The Black Madonna</div><p>${escapeHtml(content)}</p></div>`;
   }
   try {
     const r = await fetch('https://api.resend.com/emails', {
@@ -973,7 +973,7 @@ function sharedStoryText(c) {
       ], art: '/media/art/scenes/ch01_pogodin_ritual_collage.webp'
     };
   }
-  return { kicker: 'Chagidiel', title: 'Waiting', context:'The campaign is between authored scenes.', speaker:null, text: ['The story has not yet decided what it wants from you.'], art: null };
+  return { kicker: 'The Black Madonna', title: 'Waiting', context:'The campaign is between authored scenes.', speaker:null, text: ['The story has not yet decided what it wants from you.'], art: null };
 }
 function lockChoices(c, seat) {
   const s = c.current.scene, b = c.current.beat;
@@ -1128,7 +1128,7 @@ function cloneCampaignState(source, newId, newName) {
 
 async function safeNotify(env, player, message) {
   if (!player?.contact) return false;
-  if (player.method === 'sms') return (await sendSmsMessage(env, player.contact, `Chagidiel: ${message}`)).ok;
+  if (player.method === 'sms') return (await sendSmsMessage(env, player.contact, `The Black Madonna: ${message}`)).ok;
   if (player.method === 'email') return (await sendEmail(env, player.contact, message, 'alert')).ok;
   return false;
 }
@@ -1454,7 +1454,7 @@ export class AuthRoom {
       const code = randomCode();
       const hash = base64url(await sha(code));
       await this.state.storage.put(`otp:${method}:${contact}`, { hash, exp: Date.now() + 10 * 60 * 1000, attempts: 0 });
-      const result = method === 'sms' ? await sendSmsMessage(this.env, contact, `Your Chagidiel login code is ${code}. It expires in 10 minutes.`) : await sendEmail(this.env, contact, code, 'login');
+      const result = method === 'sms' ? await sendSmsMessage(this.env, contact, `Your Black Madonna login code is ${code}. It expires in 10 minutes.`) : await sendEmail(this.env, contact, code, 'login');
       if (result?.ok) return json({ ok: true, sent: true, provider: result.provider });
       if (String(this.env.DEV_OTP || '').toLowerCase() === 'true') return json({ ok: true, sent: false, provider: result?.provider || 'local', devCode: code, warning: result?.error || 'Provider delivery failed.' });
       return json({ error: `${method === 'sms' ? 'SMS' : 'Email'} login is not configured yet.`, detail: result?.error || null }, result?.configured === false ? 503 : 502);
@@ -1737,7 +1737,7 @@ export class CampaignRoom {
         const soloPrivateClues=c.testMode?new Set((c.journal.private[seat]||[]).map(x=>x.clueId)).size:0;
         const ambushThreshold=c.testMode?spentCount(c,seat)>=2:oneSlot>=2;
         const pogodinThreshold=c.testMode?(soloPrivateClues>=3||spentCount(c,seat)>=3):(sharedClueCount(c)>=3||twoSlots>=2);
-        if (c.current.mode==='free_roam'&&!c.flags.ambushDone&&ambushThreshold) { storyGate(c,'ambush',true); if(!c.testMode)for (const st of otherSeats(c,seat,true)) if (!this.presence()[st]) await safeNotify(this.env,c.players[st],'An event has interrupted Free Roam. Open Chagidiel when you can.'); }
+        if (c.current.mode==='free_roam'&&!c.flags.ambushDone&&ambushThreshold) { storyGate(c,'ambush',true); if(!c.testMode)for (const st of otherSeats(c,seat,true)) if (!this.presence()[st]) await safeNotify(this.env,c.players[st],'An event has interrupted Free Roam. Open The Black Madonna when you can.'); }
         else if (c.current.mode==='free_roam'&&c.flags.ambushDone&&!c.flags.pogodinAvailable&&pogodinThreshold) { c.flags.pogodinAvailable=true; storyGate(c,'pogodin',false); }
       } else if (b.type === 'share_clue') {
         const clueId = String(b.clueId || ''); if (!c.journal.private[seat].some(x => x.clueId === clueId)) return json({ error: 'You do not have that clue.' }, 400);
@@ -1760,6 +1760,7 @@ export class CampaignRoom {
 
 function elevenKeyInfo(env) {
   const options=[
+    ['KULT_ELEVENLABS_API_KEY',env.KULT_ELEVENLABS_API_KEY],
     ['ELEVENLABS_API_KEY',env.ELEVENLABS_API_KEY],
     ['SANGRIS_ELEVENLABS_API_KEY',env.SANGRIS_ELEVENLABS_API_KEY],
     ['SANGRIS_ELEVENLABS_KEY',env.SANGRIS_ELEVENLABS_KEY],
@@ -1812,7 +1813,7 @@ async function resolveSharedFeaturedVoices(env) {
 }
 async function listVoices(env) {
   const key=elevenKeyInfo(env).key;
-  if (!key) throw new Error('No ElevenLabs API key binding is visible to the Chagidiel Worker. The same Sangris key value can be reused.');
+  if (!key) throw new Error('No ElevenLabs API key binding is visible to The Black Madonna Worker. Configure KULT_ELEVENLABS_API_KEY as a Cloudflare Secret.');
   const r = await fetch(`${ELEVEN_BASE}/v2/voices?page_size=100&sort=name&sort_direction=asc&include_total_count=false`, { headers: { 'xi-api-key': key } });
   if (!r.ok) throw new Error(`ElevenLabs voices request failed (${r.status})`);
   const d = await r.json();
@@ -1820,7 +1821,6 @@ async function listVoices(env) {
   for (const featured of FEATURED_VOICES) {
     const existing = voices.find(v => v.voice_id === featured.voice_id);
     if (existing) Object.assign(existing, { sangris_featured: true, sangris_featured_rank: featured.sangris_featured_rank, description: existing.description || featured.description, labels: { ...featured.labels, ...(existing.labels || {}) } });
-    else voices.push({ ...featured, sangris_featured: true });
   }
   for (const featured of await resolveSharedFeaturedVoices(env)) {
     const existing = voices.find(v => v.voice_id === featured.voice_id);
@@ -1839,7 +1839,7 @@ async function listVoices(env) {
 async function narrationDiagnostics(env) {
   const info=elevenKeyInfo(env);
   const out={configured:!!info.key,binding:info.binding,r2Configured:!!env.NARRATION_AUDIO,elevenlabsOk:false,status:null,detail:null};
-  if(!info.key){out.detail='No recognized ElevenLabs secret binding was found on this Worker.';return out;}
+  if(!info.key){out.detail='No ElevenLabs secret was found. Add KULT_ELEVENLABS_API_KEY to this Worker as a Cloudflare Secret.';return out;}
   try{
     const r=await fetch(`${ELEVEN_BASE}/v2/voices?page_size=1&include_total_count=false`,{headers:{'xi-api-key':info.key}});
     out.status=r.status; out.elevenlabsOk=r.ok;
@@ -1870,7 +1870,7 @@ async function elevenTTSWithRetry(url, options) {
 }
 async function tts(env, voiceId, text, cacheKey) {
   const apiKey=elevenKeyInfo(env).key;
-  if (!apiKey) return json({ error:'ElevenLabs secret is not configured on this Worker. You may reuse the same API key value as Sangris.' },503);
+  if (!apiKey) return json({ error:'KULT ElevenLabs narration is not configured. Add KULT_ELEVENLABS_API_KEY to this Worker as a Cloudflare Secret.' },503);
   if (!env.NARRATION_AUDIO) return json({ error: 'Narration R2 binding is not configured.' }, 503);
   const cleaned = String(text || '').replace(/\r/g,'').trim();
   if (!cleaned || cleaned.length > 18000) return json({ error: 'Invalid narration text.' }, 400);
@@ -1910,9 +1910,10 @@ export default {
     if (url.pathname === '/api/health') {
       const smsLoginMode = twilioVerifyConfigured(env) ? 'twilio_verify' : (twilioMessagingConfigured(env) ? 'twilio_messages' : null);
       return json({
-        ok:true, build:'chagidiel-beta-11-admin-single-player-test',
+        ok:true, build:'black-madonna-beta-12-mobile-icon-kult-audio',
         elevenlabsConfigured:!!elevenKeyInfo(env).key,
         elevenlabsBinding:elevenKeyInfo(env).binding,
+        kultElevenlabsConfigured:!!env.KULT_ELEVENLABS_API_KEY,
         r2Configured:!!env.NARRATION_AUDIO,
         authSecretConfigured:!!env.AUTH_SECRET,
         emailConfigured:!!(env.RESEND_API_KEY&&env.RESEND_FROM),
@@ -2025,7 +2026,7 @@ export default {
     }
     if (url.pathname === '/api/voices') {
       const user = await authFromRequest(request, env, url); if (!user) return json({ error:'Authentication required.' },401);
-      try { return json({ default_voice_id:DEFAULT_VOICE_ID, voices:await listVoices(env) }); } catch(e){ return json({error:String(e.message||e)},502); }
+      try { const voices=await listVoices(env); const preferred=voices.some(v=>v.voice_id===DEFAULT_VOICE_ID)?DEFAULT_VOICE_ID:(voices[0]?.voice_id||DEFAULT_VOICE_ID); return json({ default_voice_id:preferred, voices }); } catch(e){ return json({error:String(e.message||e)},502); }
     }
     if (url.pathname === '/api/narration-page') {
       if (request.method !== 'POST') return json({error:'Method not allowed.'},405);

@@ -2,7 +2,7 @@ const DEFAULT_VOICE_ID = '54YYBuRuAG6KJooiOhFI';
 const MODEL_ID = 'eleven_multilingual_v2';
 const OUTPUT_FORMAT = 'mp3_44100_128';
 const ELEVEN_BASE = 'https://api.elevenlabs.io';
-const AUDIO_PROFILE_VERSION = 'chagidiel-beta-8-reliable-readaloud-v2';
+const AUDIO_PROFILE_VERSION = 'chagidiel-beta-9-reliable-readaloud-v2';
 const VOICE_SETTINGS = { stability: 0.64, similarity_boost: 0.82, style: 0.0, use_speaker_boost: true, speed: 1.0 };
 
 // Keep the same featured ElevenLabs choices used by the current Sangris build.
@@ -536,6 +536,46 @@ function ensureCampaignShape(c) {
   c.log = Array.isArray(c.log) ? c.log : [];
   return c;
 }
+function resetCharacterForNewRun(character) {
+  if (!character) return null;
+  let copy; try { copy = JSON.parse(JSON.stringify(character)); } catch (_) { copy = { ...character }; }
+  copy.stability = 'Composed';
+  copy.wounds = [];
+  return copy;
+}
+function resetCampaignProgress(c) {
+  const now = Date.now();
+  const originalRevision = Number(c.revision || 0);
+  const preserved = {};
+  for (const seat of SEATS) {
+    const p = c.players?.[seat];
+    if (!p) { preserved[seat] = null; continue; }
+    preserved[seat] = {
+      uid:p.uid, contact:p.contact, method:p.method,
+      characterId:p.characterId || null,
+      character:resetCharacterForNewRun(p.character),
+      characterHistory:[], entry:null, lastSeen:now,
+      prefs:{ storyAlerts:true, evidenceAlerts:true, ...(p.prefs || {}) },
+      backgroundEditUsed:false,
+    };
+  }
+  const creator = preserved.A || { uid:'', contact:'', method:'email' };
+  const fresh = newCampaign(c.id, c.invites?.B || randId('').slice(0,10).toUpperCase(), creator);
+  fresh.createdAt = c.createdAt || now;
+  fresh.players = preserved;
+  fresh.invites = {
+    B: preserved.B ? null : (c.invites?.B || fresh.invites.B),
+    C: preserved.C ? null : (c.invites?.C || fresh.invites.C),
+  };
+  fresh.relationships = Object.fromEntries(Object.entries(c.relationships || {}).filter(([_, r]) => r?.status === 'accepted' && Array.isArray(r.seats) && r.seats.every(st => preserved[st]?.character)));
+  fresh.revision = originalRevision;
+  fresh.resetAt = now;
+  fresh.resetCount = Number(c.resetCount || 0) + 1;
+  const primaryReady = !!fresh.players.A?.character && !!fresh.players.B?.character;
+  const optionalReady = !fresh.players.C || !!fresh.players.C.character;
+  if (primaryReady && optionalReady) { storyGate(fresh, 'gold_plaque', false); fresh.phase = 'chapter1'; }
+  return fresh;
+}
 function seatFor(c, uid) {
   for (const seat of SEATS) if (c.players?.[seat]?.uid === uid) return seat;
   return null;
@@ -927,6 +967,7 @@ function publicView(c, uid, online = {}) {
     journal:{ shared:c.journal.shared.map(x=>({...x,clue:CLUES[x.clueId]})), private:c.journal.private[seat].map(x=>({...x,clue:CLUES[x.clueId]})) },
     invite:{ canManage:seat==='A', seats:{ B:{claimed:!!c.players.B,code:seat==='A'&&!c.players.B?(c.invites?.B || null):null}, C:{claimed:!!c.players.C,code:seat==='A'&&!c.players.C?(c.invites?.C || null):null} } },
     betaComplete:c.flags.betaComplete,
+    capabilities:{ campaignReset:seat==='A', notifications:true, mobileNav:true },
   };
   if (c.current.mode === 'story_lock' && participant) { base.story = personalizeStory(c,seat,sharedStoryText(c)); base.choices = lockChoices(c,seat); }
   return base;
@@ -1348,6 +1389,15 @@ export class CampaignRoom {
       if (!Array.isArray(c.processedActions)) c.processedActions = [];
       const clientActionId = String(b.clientActionId || '').slice(0, 120);
       if (clientActionId && c.processedActions.includes(clientActionId)) return json({ ok: true, deduplicated: true, state: publicView(c, uid, this.presence()) });
+      if (b.type === 'reset_campaign') {
+        if (seat !== 'A') return json({ error:'Only Seat A can reset the campaign.' },403);
+        const reset = resetCampaignProgress(c);
+        reset.processedActions = clientActionId ? [clientActionId] : [];
+        await this.save(reset, 'campaign_reset');
+        this.broadcast(reset);
+        for (const st of otherSeats(reset, seat)) if (!this.presence()[st]) await safeNotify(this.env, reset.players[st], 'The campaign was reset and has restarted from the beginning with the current protagonists.');
+        return json({ ok:true, reset:true, state:publicView(reset, uid, this.presence()) });
+      }
       if (b.type === 'set_character' || b.type === 'assign_character' || b.type === 'edit_character') {
         const cleaned = cleanCharacter(b.character);
         if (cleaned.error) return json({ error: cleaned.error }, 400);
@@ -1621,7 +1671,7 @@ export default {
     if (url.pathname === '/api/health') {
       const smsLoginMode = twilioVerifyConfigured(env) ? 'twilio_verify' : (twilioMessagingConfigured(env) ? 'twilio_messages' : null);
       return json({
-        ok:true, build:'chagidiel-beta-8-drafts-third-seat-relationships',
+        ok:true, build:'chagidiel-beta-9-reset-mobile-notifications',
         elevenlabsConfigured:!!elevenKeyInfo(env).key,
         elevenlabsBinding:elevenKeyInfo(env).binding,
         r2Configured:!!env.NARRATION_AUDIO,
@@ -1646,7 +1696,10 @@ export default {
         characterDrafts:true,
         optionalThirdSeat:true,
         relationshipConsent:true,
-        oneTimeBackgroundRevision:true
+        oneTimeBackgroundRevision:true,
+        campaignReset:true,
+        notificationCenter:true,
+        mobileNavigationV2:true
       },200,{'cache-control':'no-store'});
     }
     if (url.pathname === '/api/config') return json({ vapidPublicKey: env.VAPID_PUBLIC_KEY || null, pushDelivery: false });

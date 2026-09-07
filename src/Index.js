@@ -479,7 +479,7 @@ function playerRecord(creator) {
 function newCampaign(id, invite, creator, name = '', testMode = false) {
   testMode = !!testMode;
   return {
-    version: 5,
+    version: 6,
     testMode,
     id,
     name: String(name || '').trim().slice(0,80) || `Black Madonna — ${String(id || '').slice(-6).toUpperCase()}`,
@@ -501,7 +501,7 @@ function newCampaign(id, invite, creator, name = '', testMode = false) {
 }
 function ensureCampaignShape(c) {
   if (!c) return c;
-  c.version = Math.max(5, Number(c.version || 1));
+  c.version = Math.max(6, Number(c.version || 1));
   c.testMode = !!c.testMode;
   if (!c.name) c.name = `Black Madonna — ${String(c.id || '').slice(-6).toUpperCase()}`;
   c.players = c.players || {};
@@ -520,6 +520,14 @@ function ensureCampaignShape(c) {
   c.storyLock.ready = { ...blankReady(), ...(c.storyLock.ready || {}) };
   c.storyLock.actions = c.storyLock.actions || {};
   c.storyLock.participants = Array.isArray(c.storyLock.participants) ? c.storyLock.participants.filter(x => SEATS.includes(x)) : [];
+  if (c.storyLock.lastResolution) {
+    const lr = c.storyLock.lastResolution;
+    lr.pending = lr.pending !== false;
+    lr.scene = lr.scene || c.current?.scene || null;
+    lr.beat = Number.isFinite(Number(lr.beat)) ? Number(lr.beat) : Math.max(0, Number(c.current?.beat || 0) - 1);
+    lr.participants = Array.isArray(lr.participants) ? lr.participants.filter(x => SEATS.includes(x)) : [...c.storyLock.participants];
+    lr.acknowledged = { ...blankReady(), ...(lr.acknowledged || {}) };
+  }
   if (c.storyLock.gate) {
     c.storyLock.gate.acknowledged = { ...blankReady(), ...(c.storyLock.gate.acknowledged || {}) };
     if (!c.storyLock.gate.requirement) c.storyLock.gate.requirement = c.storyLock.gate.scene === 'ambush' ? 'quorum_2' : 'full_party';
@@ -597,6 +605,8 @@ function primaryCounterpart(c, seat) {
 }
 function relationshipKey(a,b) { return [a,b].sort().join(':'); }
 function storyRequirement(scene) { return ['gold_plaque','pogodin'].includes(scene) ? 'full_party' : 'quorum_2'; }
+function storyMaxBeat(scene) { return scene === 'gold_plaque' ? 2 : scene === 'ambush' ? 1 : scene === 'pogodin' ? 2 : 0; }
+function storyResolutionReady(c) { return !!(c?.current?.mode === 'story_lock' && c?.storyLock?.lastResolution?.pending); }
 function requiredSeatsForGate(c, requirement) {
   const eligible = occupiedSeats(c, true);
   if (c.testMode) return eligible.slice(0,1);
@@ -708,6 +718,7 @@ function finishStory(c, nextMode = 'free_roam') {
   c.storyLock.ready = blankReady();
   c.storyLock.participants = [];
   c.storyLock.gate = null;
+  c.storyLock.lastResolution = null;
   if (nextMode === 'free_roam') c.current = { mode: 'free_roam', scene: 'berlin_free_roam', beat: 0 };
 }
 
@@ -852,17 +863,36 @@ function partyHistoryEcho(c, seat) {
   if (otherNames.length === 1) return `You and ${otherNames[0]} do not need a fabricated shared past. If you did not arrive together, a mutual acquaintance at the reception has already made the introduction, and the evening gives you time to decide what you make of one another.`;
   return `You are not all old friends. Where prior relationships do not already connect the group, mutual acquaintances at the reception make the introductions. By the time dinner ends, ${otherNames.join(' and ')} are no longer anonymous faces in the crowd.`;
 }
+function partyFlowEcho(c, seat, scene, beat) {
+  const rel = acceptedRelationships(c, seat)[0];
+  const others = otherSeats(c, seat, true);
+  if (!others.length) return null;
+  const other = rel?.seats?.find(x => x !== seat) || others[0];
+  const otherName = c.players?.[other]?.character?.name || 'the other protagonist';
+  if (scene === 'gold_plaque' && beat === 0) {
+    if (rel?.type === 'married') return `You arrived with ${otherName}. The two of you have spent enough evenings in public together to divide a room without discussing it: one conversation, one glance, one quiet check that the other is all right.`;
+    if (['dating','engaged'].includes(rel?.type)) return `You and ${otherName} arrive with a private familiarity that makes the formal reception easier to tolerate. When one of you gets trapped in a conversation, the other already knows the look that means rescue me.`;
+    if (rel?.type === 'siblings') return `${otherName} has known you too long to be impressed by the evening dress or the chandeliers. The familiarity is useful; the room can remain strange without the two of you having to be strangers inside it.`;
+    if (rel?.type === 'close_friends') return `You and ${otherName} settle into the reception as friends do: separating when conversation pulls you apart, finding one another again without needing to plan it.`;
+    return `You and ${otherName} are not required to have a convenient shared history. If you did not arrive together, a mutual acquaintance introduces you before dinner. By the time the dance begins, you have had hours—not seconds—to decide whether the other person is interesting, useful, irritating, or some combination of all three.`;
+  }
+  if (scene === 'gold_plaque' && beat === 1) return `When the three men look toward your part of the room, ${otherName} notices the change too. Whatever else you disagree about, neither of you has to explain that this reaction is wrong.`;
+  if (scene === 'gold_plaque' && beat === 2 && rel) return relationshipEcho(c, seat, scene);
+  if (scene === 'ambush' && beat === 0 && rel) return relationshipEcho(c, seat, scene);
+  if (scene === 'pogodin' && beat === 0 && rel) return relationshipEcho(c, seat, scene);
+  return null;
+}
 function personalizeStory(c, seat, shared) {
   const character = c.players?.[seat]?.character;
   if (!character || !shared) return shared;
+  const text = Array.isArray(shared.text) ? [...shared.text] : [];
+  const flow = partyFlowEcho(c, seat, c.current.scene, c.current.beat);
+  if (flow) text.splice(Math.min(1, text.length), 0, flow);
   const personal = [];
-  if (c.current.scene === 'gold_plaque' && c.current.beat === 0) {
-    personal.push(invitationEcho(character));
-    personal.push(partyHistoryEcho(c, seat));
-  }
-  personal.push(relationshipEcho(c, seat, c.current.scene), magdaEcho(character, c.current.scene), occupationEcho(character, c.current.scene), familyEcho(character, c.current.scene), darkSecretEcho(character, c.current.scene));
+  if (c.current.scene === 'gold_plaque' && c.current.beat === 0) personal.push(invitationEcho(character));
+  personal.push(magdaEcho(character, c.current.scene), occupationEcho(character, c.current.scene), familyEcho(character, c.current.scene), darkSecretEcho(character, c.current.scene));
   if (c.players?.[seat]?.entry?.pending) personal.unshift(c.players[seat].entry.text);
-  return { ...shared, personal: personal.filter(Boolean) };
+  return { ...shared, text, personal: personal.filter(Boolean) };
 }
 function freeRoamCharacterEcho(character, location) {
   if (!character) return null;
@@ -884,92 +914,91 @@ function sharedStoryText(c) {
     if (b === 0) return {
       kicker: 'Hamburg Rathaus · 14 September 1991 · 20:00',
       title: 'The Gold Plaque',
-      context: 'The German Authors Association has filled Hamburg’s Rathaus with writers, publishers, patrons, officials, and people who have learned how to look comfortable among them.',
+      context: 'For the moment, this is only a formal evening in a newly reunified Germany: speeches, professional obligations, expensive clothes, and people pretending not to be bored.',
       speaker: { name: 'A Rathaus steward', line: 'The ballroom is open. Dinner will begin shortly.' },
       text: [
-        'Outside, a wet September evening turns the windows black. Inside the main lobby, umbrellas disappear into cloakrooms while prominent authors and publishers exchange names beneath stone arches. If you did not arrive with the other protagonists, introductions happen naturally through the overlapping acquaintances that brought each of you here.',
-        'At eight, the guests are directed into an enormous domed ballroom. Crystal chandeliers hang above rows of oak tables dressed in white silk and candlelight. Liveried waiters circulate with salmon pâté, roast venison, and later apple tart with sorbet. The room smells of wax, perfume, wine, and rain drying from expensive wool.',
-        'Karl Dietmar gives the keynote. The Gold Plaque itself goes to Leon Schütz, a poet obscure enough that several people at your table quietly ask one another who he is before applauding with perfect manners.',
-        'After dinner the formal arrangement loosens. Guests drift into smaller public rooms, the dance begins, and alcohol turns professional reserve into louder opinions. A waitress flirts shamelessly with a guest near the doors; a manager has become too drunk to lower his voice; two people argue politics as though the Wall fell specifically to prove one of them correct.',
-        'Nothing is wrong. That is important. For a while the Rathaus feels safe, social, almost banal—a place where the worst consequence of choosing badly should be an awkward conversation.'
+        'Rain darkens the stone outside Hamburg’s Rathaus and follows the guests inside as damp wool and shining umbrellas. The German Authors Association has filled the lobby with writers, publishers, academics, patrons, officials, and the people whose work brings them close to such circles without ever making them entirely part of them.',
+        'At eight, the crowd is guided beneath a domed ceiling and crystal chandeliers. White silk covers the oak tables. Waiters move through the hall with salmon pâté and roast venison, then apple tart and sorbet. Conversation starts cautiously, loosens with wine, and eventually becomes louder than the speeches.',
+        'Karl Dietmar gives the keynote. A nearly unknown poet named Leon Schütz receives the Gold Plaque to courteous applause. Nothing sinister happens. That matters. The campaign begins by giving you an evening in which the worst plausible mistake is saying the wrong thing to the wrong editor.',
+        'After dinner, the ceremony dissolves into smaller rooms and a dance. A waitress flirts with anyone who encourages her. A manager is drunk enough to stop pretending otherwise. A political argument near the doors has attracted an audience. There is time to talk, observe, and learn how the other protagonists occupy a room before anything asks you to trust them.'
       ], art: null
     };
     if (b === 1) return {
       kicker: 'Hamburg Rathaus · Near midnight',
-      title: 'Late Arrivals',
-      context: 'The crowd has thinned when four late guests are shown into the room: one woman and three middle-aged men in formal evening clothes.',
-      speaker: { name: 'A nearby guest', line: 'They have missed almost everything.' },
+      title: 'Four Late Arrivals',
+      context: 'The party has begun to empty when a woman and three middle-aged men enter in formal evening clothes and are shown to a table near yours.',
+      speaker: { name: 'A nearby guest', line: 'A little late for the prize, aren’t they?' },
       text: [
-        'You recognize the woman before you understand why the sight of her changes the room. Magda Orlova has been part of your life in one way or another—through work, friendship, family, old affection, or the literary circles that overlap between Hamburg and Berlin.',
-        'The men with her are less immediately familiar. One is exhausted-looking in a way that has nothing to do with the late hour. Depending on what worlds you move through, the name Filip Kramer may surface: a West Berlin painter with talent, drugs, occult rumors, and a reputation that tends to arrive before he does.',
-        'Then the men notice you. Their conversation stops without anyone raising a voice. One reaches for his glass and misses it the first time. Another has gone pale. They are not looking at you with ordinary curiosity, and not quite with recognition either. It is closer to the expression of people who have seen something impossible become physical.',
-        'Magda notices their reaction. A hurried exchange passes between the four of them. Courtesy survives just long enough for the men to excuse themselves, but the departure is too abrupt to be mistaken for casual fatigue.'
+        'The woman is familiar first. Dark hair, a full-length gown, a short white cape handed to a steward—and then the face resolves into Magda Orlova. Whatever place she occupies in your past, seeing her here should be ordinary enough.',
+        'It is the men who make it otherwise. One looks exhausted beyond the excuse of a late evening. If you know Berlin’s artistic circles, he resembles Filip Kramer, a painter whose talent is usually mentioned in the same breath as heroin, occult rumors, and stories people repeat more quietly than they need to.',
+        'One of the men looks toward you. The other two follow. Conversation at their table stops. A hand reaches for a glass and misses. Color drains from a face. Nobody points, nobody calls your name, yet all three react with the unmistakable shock of people confronted by something they believed existed somewhere else.',
+        'Magda follows their gaze to you. She looks confused, then concerned. A low, urgent exchange begins at the table. You have only a short window in which to decide whether to approach, watch, identify, or simply let the four of them show you what they are afraid of.'
       ], art: null
     };
     return {
-      kicker: 'Hamburg Rathaus · The dance',
+      kicker: 'Hamburg Rathaus · After midnight',
       title: 'Magda Orlova',
-      context: 'With Anton Mahler, Aleksandr “Sasha” Pogodin, and Filip Kramer gone, Magda is left facing the people they were so visibly afraid to see.',
-      speaker: { name: 'Magda Orlova', line: 'I was beginning to think I might leave Hamburg without finding anyone I knew.' },
+      context: 'The three men have left with apologies too hurried to be convincing. Magda remains behind, visibly unsettled by their reaction and unexpectedly relieved to see you.',
+      speaker: { name: 'Magda Orlova', line: 'I thought coming back to Hamburg would help. It hasn’t.' },
       text: [
-        'Up close, the change in Magda is difficult to dismiss. She looks as though several hard years have passed since the last time memory insists you saw her. Her face is drained, her movements careful. A sweet, heavy perfume arrives before she does and lingers after every gesture.',
-        'She removes her white gloves to greet you and puts them back on almost immediately. The contact is brief—a handshake, fingers against a sleeve, a reassuring touch at an elbow—but she seems compelled to make it with everyone before the conversation settles.',
-        'Berlin comes up first. Then sleeplessness. Then dreams. Magda describes waking with the feeling that she has been somewhere bitterly cold, somewhere dark enough to make darkness feel solid. When she tries to explain further, the confidence leaves her voice.',
-        'Ask about the three men and she names them: Anton Mahler, Sasha Pogodin, and Filip Kramer, friends from her youth in East Germany whom she had not seen together in years. Filip contacted her again after the Wall fell. She does not understand why they reacted to you as they did.',
-        'Before long she excuses herself. Offers of help make her smile but do not change her mind. The evening ends with more questions than it began with—and with the uncomfortable impression that somebody outside the Rathaus is still paying attention.'
+        'She comes to you rather than asking you to cross the room. Up close, the change is harder to excuse as bad light. Magda seems smaller than memory, prematurely aged, and exhausted in a way that makes every movement look deliberate. Her perfume is sweet, strong, and almost medicinal.',
+        'She removes her gloves to greet each of you. The contact is brief. Even when a handshake is avoided, she finds some ordinary gesture—a hand at an elbow, fingers against a sleeve—as though physical reassurance matters to her tonight. Then the gloves go back on.',
+        'For a minute the conversation behaves normally. She asks about work, mutual acquaintances, the absurdity of formal dinners. Then her attention drifts toward the doorway used by the three men. She admits she has barely slept since returning to Berlin. The same dream comes every night. She came back to Hamburg hoping distance would stop it.',
+        'The admission leaves her embarrassed and frightened at once. She has not yet described the dream, and she has not explained why the three men looked at you as though they knew you. There is time for one line of conversation to become the important one.'
       ], art: null
     };
   }
   if (s === 'ambush') {
     if (b === 0) return {
       kicker: 'Berlin · Night', title: 'The Russians Strike',
-      context: 'For days there have been signs that someone is building a file on you: opened mail, inexplicable record requests, and the same metallic Dodge van with dark windows appearing where it should not.',
+      context: 'Opened mail, inexplicable inquiries, and a metallic Dodge van have turned coincidence into a pattern. Tonight the pattern stops observing you.',
       speaker: null,
       text: [
-        'Tonight the surveillance stops pretending to be passive. In a secluded stretch of street, the Dodge appears again and slows instead of passing. Its plates are difficult to read, the grime on them just a little too convenient.',
-        'The side door opens. The men who emerge do not shout a warning or ask for anything. Their silence is the most professional thing about them.',
-        'If you are visibly armed, hands go toward firearms. If you are not, the shapes in their grips are shorter and heavier. Either way, the intention is clear before anyone speaks: this is not intimidation arranged for later. It is an attack arranged for now.'
+        'The street is wet enough to double every light. The Dodge appears at the far end, slows, and keeps slowing. Its plates are obscured by grime applied a little too carefully to be accidental.',
+        'The side door opens before the van has fully settled. The men who step out do not posture, shout, or demand anything. Their silence is practiced. Their attention moves between exits, hands, and bodies with the efficiency of people who planned the first seconds before arriving.',
+        'This is the instant before violence becomes inevitable. There is still room to choose what you protect first: yourself, another protagonist, information, distance, or the chance to identify who sent them.'
       ], art: '/media/art/scenes/ch01_medical_police_research_collage.webp'
     };
     return {
-      kicker: 'Story Lock · Combat beat', title: 'No Clean Exit',
-      context: 'The first exchange has destroyed the attackers’ hope of a completely controlled ambush, but it has not made the street safe.',
-      speaker: { name: 'One of the attackers', line: 'Move.' },
+      kicker: 'Story Lock · Combat beat', title: 'A Bad Plan Coming Apart',
+      context: 'The ambush has failed to remain clean. That does not mean it is over.',
+      speaker: { name: 'One of the attackers', line: 'Move. Now.' },
       text: [
-        'Wet pavement, parked cars, building entrances, and the running engine of the Dodge become the geometry of the fight. The attackers keep their communication short and practical. They are willing to retreat if the job goes bad; they are not interested in negotiating.',
-        'One protagonist’s movement changes the options available to the others. Cover is useful only if someone can reach it. An opening matters only if somebody recognizes it. The question is no longer whether the group reacts, but whether those reactions can become one plan before the attackers recover theirs.'
+        'A parked car has lost a window. Someone is shouting from an apartment above. The Dodge is still running. The attackers are already deciding whether completing the job is worth being seen doing it.',
+        'Your first reactions have created the next problem. Whoever moved to cover has a route. Whoever stayed exposed needs one. Whoever tried to identify the attackers now has details worth surviving long enough to remember.',
+        'The men are not fanatics. They will break contact if the operation becomes too expensive. The question is whether you let them leave on their terms—or force them to leave something useful behind.'
       ], art: '/media/art/scenes/ch01_medical_police_research_collage.webp'
     };
   }
   if (s === 'pogodin') {
     if (b === 0) return {
       kicker: 'Berlin · Pogodin estate', title: "Pogodin’s Mansion",
-      context: 'The evidence has converged on Sasha Pogodin’s estate: a guarded residence whose security makes more sense once you stop treating it as merely a rich man’s home.',
+      context: 'The evidence has finally converged on Sasha Pogodin’s estate. Getting inside is not the same thing as understanding what waits there.',
       speaker: null,
       text: [
-        'The house sits back from the road behind walls, controlled approaches, security lighting, and men whose posture tells you they are employed for more than opening gates. Somewhere beyond the lit windows, dogs move through the grounds.',
-        'The public face of the estate is money and privacy. The pattern underneath it is harder: visitors managed through specific entrances, rooms kept beyond ordinary circulation, and the sense of an organization using a residence as cover for something it cannot conduct openly.',
-        'You know Anton, Sasha, and Filip are connected to what has been happening since Hamburg. You also know the ritual theory you have assembled may be catastrophically wrong. Tonight is where those two uncertainties meet.'
+        'The residence sits behind controlled approaches, security lighting, walls, dogs, and men whose posture makes the word bodyguard feel too polite. Expensive windows glow against the dark. Nothing about the exterior needs the occult to be threatening.',
+        'You have followed too many separate threads here: surveillance, the Slavic Association, Magda’s fear, the three Russians, and a ritual theory that promises an answer precisely because you do not yet understand its cost.',
+        'Before crossing the property line, you have one advantage the people inside do not: they do not know exactly which version of you is coming. Quiet, patient, official, deceptive, reckless—each approach creates a different house.'
       ], art: '/media/art/scenes/ch01_pogodin_mansion_collage.webp'
     };
     if (b === 1) return {
-      kicker: 'Inside the estate', title: 'The Inner Circle',
-      context: 'Past the respectable rooms, the mansion changes character. What is hidden below was designed for privacy of a different kind.',
+      kicker: 'Inside the estate', title: 'Below the Respectable Rooms',
+      context: 'Once you pass the rooms built for guests, the mansion stops pretending to be a home.',
       speaker: { name: 'A voice beyond the next door', line: 'They are ready downstairs.' },
       text: [
-        'Soundproofed doors interrupt the expensive domestic architecture. The air grows warmer as you descend. Symbols have been worked into the space with too much care to be theatrical decoration.',
-        'There are prisoners here—people reduced to components of someone else’s ceremony. Their presence turns every abstract occult conclusion into an immediate human problem.',
-        'Anton, Sasha, and Filip are somewhere ahead. So is the ritual you believe may turn their curse back upon them. The deeper you go, the less certain it becomes that the curse belongs to any of you in the simple way you hoped.'
+        'Soundproofed doors interrupt the expensive domestic architecture. The air grows warmer as you descend. Symbols are worked into stone and wood with too much precision to be decoration and too little concern for beauty to be theater.',
+        'Then you find the prisoners. Their existence changes the moral shape of the problem immediately. Whatever the ritual is supposed to accomplish, this place has already required suffering before you arrived.',
+        'Anton, Sasha, and Filip are somewhere ahead. So is the rite you believe may turn a curse back toward its source. Moving deeper now means deciding what matters when evidence, survival, and other people’s lives stop pointing in the same direction.'
       ], art: '/media/art/scenes/ch01_pogodin_ritual_collage.webp'
     };
     return {
       kicker: 'Point of no return', title: 'The Third Circle',
-      context: 'The last stage of the rite requires the three Russians themselves inside the geometry. Completing it will end the question of whether you were willing to go this far.',
+      context: 'The three Russians are finally inside the geometry. The theory can be tested. The prisoners are still here. Nobody gets to call the next choice abstract.',
       speaker: null,
       text: [
-        'The circle is almost complete. Anton, Sasha, and Filip are no longer distant names attached to surveillance, dreams, and violence. They are frightened men inside a room built to make fear useful.',
-        'The words are ready. The geometry is ready. The captives are still here. Every decision that led to this basement now competes for priority at once.',
-        'What happens next will not be a private experiment. It will change the campaign for everyone who crosses the line with you.'
+        'Anton, Sasha, and Filip no longer look like distant names in a file. They are frightened men trapped inside a room built to make fear useful. Whatever they have done, whatever they intended for you, the ritual asks you to make their terror part of the mechanism.',
+        'The words are ready. The geometry is ready. Your evidence is incomplete. The people in the cells are still alive. Every choice that brought you underground now competes for priority at the same time.',
+        'There is no neutral version of what happens next. Completing the rite, breaking it, delaying it for the prisoners, or walking away will each become part of the campaign’s history.'
       ], art: '/media/art/scenes/ch01_pogodin_ritual_collage.webp'
     };
   }
@@ -977,33 +1006,34 @@ function sharedStoryText(c) {
 }
 function lockChoices(c, seat) {
   const s = c.current.scene, b = c.current.beat;
+  if (storyResolutionReady(c)) return [];
   if (s === 'gold_plaque' && b === 0) return [
     { id: 'mingle', label: 'Mingle and read the room', move: 'observe_situation' },
-    { id: 'stay_together', label: 'Stay close to your partner', move: null },
+    { id: 'stay_together', label: c.testMode ? 'Keep to the edge and observe' : 'Stay close to the other protagonists', move: null },
     { id: 'work_room', label: 'Use your professional contacts', move: 'influence_other' },
     { id: 'watch_exits', label: 'Watch the entrances and exits', move: 'observe_situation' },
   ];
   if (s === 'gold_plaque' && b === 1) return [
-    { id: 'approach_magda', label: 'Go directly to Magda', move: null },
-    { id: 'watch_russians', label: 'Watch the three men instead', move: 'observe_situation' },
+    { id: 'approach_magda', label: 'Move toward Magda before the moment passes', move: null },
+    { id: 'watch_russians', label: 'Watch the three men and their reaction', move: 'observe_situation' },
     { id: 'identify_filip', label: 'Try to place the exhausted-looking man', move: 'investigate' },
-    { id: 'hang_back', label: 'Keep your distance and let them reveal themselves', move: 'read_person' },
+    { id: 'hang_back', label: 'Stay back and read the exchange', move: 'read_person' },
   ];
   if (s === 'gold_plaque' && b === 2) return [
-    { id: 'ask_nightmares', label: 'Ask Magda about the nightmares', move: 'read_person' },
-    { id: 'reassure', label: 'Reassure her and stay close', move: 'influence_other' },
-    { id: 'press', label: 'Press her for names and details', move: 'influence_other' },
-    { id: 'follow_russians', label: 'Track where the Russians went', move: 'employ_stealth' },
+    { id: 'ask_nightmares', label: 'Ask Magda what happens in the dream', move: 'read_person' },
+    { id: 'ask_men', label: 'Ask who the three men were', move: 'read_person' },
+    { id: 'reassure', label: 'Tell her she looks ill and offer to help', move: 'influence_other' },
+    { id: 'follow_russians', label: c.testMode ? 'Follow the three men before they disappear' : 'Leave Magda with the others and follow the three men', move: 'employ_stealth' },
   ];
   if (s === 'ambush') return b === 0 ? [
     { id: 'cover', label: 'Get to cover and assess the threat', move: 'act_under_pressure' },
-    { id: 'protect', label: 'Protect your partner', move: 'act_under_pressure' },
-    { id: 'observe', label: 'Find the shooter and the cleanest exit', move: 'observe_situation' },
+    { id: 'protect', label: c.testMode ? 'Protect your position and keep moving' : 'Protect another protagonist', move: 'act_under_pressure' },
+    { id: 'observe', label: 'Find the attackers and the cleanest exit', move: 'observe_situation' },
     { id: 'return_fire', label: 'Return fire', move: 'engage_in_combat' },
     { id: 'rush_van', label: 'Rush the van before they can reposition', move: 'act_under_pressure' },
   ] : [
-    { id: 'escape', label: 'Break contact and escape together', move: 'act_under_pressure' },
-    { id: 'suppress', label: 'Keep them pinned while your partner moves', move: 'engage_in_combat' },
+    { id: 'escape', label: c.testMode ? 'Break contact and get out' : 'Break contact and get everyone out', move: 'act_under_pressure' },
+    { id: 'suppress', label: c.testMode ? 'Keep them pinned while you move' : 'Keep them pinned while the others move', move: 'engage_in_combat' },
     { id: 'disable_van', label: 'Disable the van', move: 'improvised', attribute: 'reason' },
     { id: 'take_prisoner', label: 'Try to take one attacker alive', move: 'engage_in_combat' },
   ];
@@ -1027,33 +1057,149 @@ function lockChoices(c, seat) {
   ];
   return [];
 }
+function actionActors(c, actions, id) {
+  return Object.entries(actions || {}).filter(([_,a]) => a?.id === id).map(([seat]) => c.players?.[seat]?.character?.name || `Seat ${seat}`);
+}
+function namesPhrase(names) {
+  const a=(names||[]).filter(Boolean); if(!a.length)return''; if(a.length===1)return a[0]; if(a.length===2)return `${a[0]} and ${a[1]}`; return `${a.slice(0,-1).join(', ')}, and ${a[a.length-1]}`;
+}
 function resolveJoint(c, actions) {
   const s = c.current.scene, b = c.current.beat;
   const participants = (c.storyLock.participants || Object.keys(actions)).filter(x => actions[x]);
   const ids = participants.map(x => actions[x]?.id).filter(Boolean);
-  const same = ids.length > 1 && ids.every(x => x === ids[0]);
   const solo = !!c.testMode && participants.length === 1;
   const has = id => ids.includes(id);
-  let text = [];
+  const actors = id => namesPhrase(actionActors(c, actions, id));
+  const text = [];
   if (s === 'gold_plaque') {
-    if (b === 0) text = solo ? ['You let your attention move methodically through the room. Without another protagonist to divide the work, you build the picture yourself: who belongs, who is performing belonging, who watches instead of drinking.'] : (same ? ['You fall into the same rhythm without discussing it. The room gives up details slowly: who belongs, who is performing belonging, who watches instead of drinking.'] : ['You divide your attention. Different instincts map the same room from different angles until the evening feels observed rather than merely attended.']);
-    if (b === 1) text = has('watch_russians') ? ['The Russians are not merely uncomfortable. They are frightened of you, and trying badly not to show it. Magda notices their reaction and becomes frightened in turn.'] : ['Magda receives you with warmth strained by exhaustion. Behind her, the three men exchange a quick, private look and leave sooner than courtesy requires.'];
-    if (b === 2) text = ['Magda talks until the subject begins circling back on itself: Berlin, sleeplessness, the same nightmares, the feeling that something is waiting for her when she closes her eyes.', 'When you part, the evening feels unresolved. By the following night, everyone who stood close enough to her is ill.'];
+    if (b === 0) {
+      const handled=new Set();
+      if (!solo && has('mingle') && has('watch_exits')) {
+        text.push(`${actors('mingle')} let the reception carry them from table to table while ${actors('watch_exits')} stay closer to the room’s edges. The split is useful rather than isolating: one side of the group learns names and tempers; the other learns the rhythm of doors, staff, and departures. When you cross paths again, there is already something concrete to exchange.`);
+        handled.add('mingle'); handled.add('watch_exits');
+      } else if (!solo && has('work_room') && has('stay_together')) {
+        text.push(`${actors('work_room')} turn professional introductions into a quiet map of the room. ${actors('stay_together')} remain close enough to catch the useful names between conversations, and the exchange begins to feel less like strangers sharing a table and more like people learning how to work beside one another.`);
+        handled.add('work_room'); handled.add('stay_together');
+      } else if (!solo && has('mingle') && has('stay_together')) {
+        text.push(`${actors('mingle')} move easily into the crowd, drawing conversation after them. ${actors('stay_together')} become the point they return to between introductions. By the second or third reunion, the small ritual has become natural: separate, notice something, find one another again.`);
+        handled.add('mingle'); handled.add('stay_together');
+      }
+      if (has('mingle')&&!handled.has('mingle')) text.push(`${solo?'You':actors('mingle')} circulate instead of waiting for the evening to become important. Editors avoid authors they owe, a revolutionary turns reunification into an argument, a waitress enjoys the freedom to be scandalous, and a manager steadily loses his battle with the wine. The room stops being scenery.`);
+      if (has('work_room')&&!handled.has('work_room')) text.push(`${solo?'You':actors('work_room')} make professional conversation do useful work. Names, affiliations, and reputations begin attaching themselves to faces. Nothing discovered is sinister; it simply gives you people to recognize later.`);
+      if (has('watch_exits')&&!handled.has('watch_exits')) text.push(`${solo?'You':actors('watch_exits')} keep an eye on the entrances long enough to learn the evening’s rhythm: guests leaving in clusters, staff relaxing after the formal program, coats beginning to disappear from the cloakroom. There is no reason yet to expect danger.`);
+      if (has('stay_together')&&!handled.has('stay_together')) text.push(solo ? 'You stay near the edge of the social current and let the room come to you. It is a quieter way to learn who seeks attention and who avoids it.' : `${actors('stay_together')} spend enough of the evening near one another that coordination stops being an abstract campaign convenience. You learn small things: who interrupts, who listens, who notices a change in tone before anyone says why.`);
+      text.push('By the time the dance begins, the Rathaus has done what a good party is supposed to do: it has become familiar. That is why four people arriving near midnight feel like an interruption rather than another entrance.');
+    } else if (b === 1) {
+      const handled=new Set();
+      if (!solo && has('approach_magda') && has('watch_russians')) {
+        text.push(`${actors('approach_magda')} start toward Magda. ${actors('watch_russians')} do not follow; they keep their attention on the three men instead. For a few seconds the group sees both halves of the same exchange. Magda looks confused by the sudden tension. The men look frightened by you.`);
+        text.push(`As ${actors('approach_magda')} close the distance, one of the men bends toward Magda and speaks too low to hear. ${actors('watch_russians')} catch the rest: a missed grip on a glass, a handkerchief pressed to a suddenly pale face, eyes that keep returning to your side of the room and snapping away.`);
+        handled.add('approach_magda'); handled.add('watch_russians');
+      } else if (!solo && has('approach_magda') && has('identify_filip')) {
+        text.push(`${actors('approach_magda')} move toward Magda while ${actors('identify_filip')} search memory for the exhausted man’s face. The name arrives before you reach the table: Filip Kramer—West Berlin galleries, addiction, and occult gossip. Quietly sharing the recognition makes Magda’s company feel less accidental before she has said a word.`);
+        handled.add('approach_magda'); handled.add('identify_filip');
+      } else if (!solo && has('identify_filip') && has('watch_russians')) {
+        text.push(`${actors('identify_filip')} put a name to the tired man—Filip Kramer—while ${actors('watch_russians')} watch what the name cannot explain. Kramer is not merely uncomfortable. Neither are his companions. The three react to your presence with a physical fear that looks much older than this evening.`);
+        handled.add('identify_filip'); handled.add('watch_russians');
+      } else if (!solo && has('approach_magda') && has('hang_back')) {
+        text.push(`${actors('approach_magda')} start across the room. ${actors('hang_back')} stay where they are and watch the table receive that decision. Magda’s face brightens with recognition; the men’s expressions tighten. The difference is immediate enough that neither half of the group needs to explain it later.`);
+        handled.add('approach_magda'); handled.add('hang_back');
+      }
+      if (has('watch_russians')&&!handled.has('watch_russians')) text.push(`${actors('watch_russians')} watch the three men instead of Magda. Their fear is physical—dry mouths, missed grips, a handkerchief produced for a face that has gone suddenly pale. They are trying to hide recognition without ever admitting they recognize anyone.`);
+      if (has('identify_filip')&&!handled.has('identify_filip')) text.push(`${actors('identify_filip')} place the exhausted-looking man: Filip Kramer. The name carries West Berlin galleries, addiction, and occult gossip. Recognition explains who he is. It does nothing to explain why he looks at you as though memory itself has become a threat.`);
+      if (has('approach_magda')&&!handled.has('approach_magda')) text.push(`${actors('approach_magda')} begin moving toward Magda. She notices and starts to rise, but one of the men catches her attention and speaks urgently into the space between them.`);
+      if (has('hang_back')&&!handled.has('hang_back')) text.push(`${actors('hang_back')} stay out of the exchange and let body language do the talking. Magda is confused by the men. The men are frightened by you. Whatever they are whispering, she is not the person controlling the conversation.`);
+      text.push('The whispered discussion breaks off. The three men offer polite goodbyes too quickly to sound casual and leave together. Magda watches them go for a long second. When she turns back, the anxiety in her face gives way to something simpler: relief at seeing familiar people. This time she crosses the room herself.');
+    } else {
+      const handled=new Set();
+      if (!solo && has('ask_nightmares') && has('reassure')) {
+        text.push(`${actors('reassure')} notice how close Magda is to retreating from the conversation and soften it before ${actors('ask_nightmares')} ask for details. The order matters. She accepts the concern first, then looks down at her gloved hands.`);
+        text.push('“I’m a child in it,” she says at last. The rest comes in fragments: punishment, a locked darkness, something moving where she cannot see it, and pain so complete that everything after it becomes confused. When she stops, she seems embarrassed by how badly the memory has shaken her.');
+        handled.add('ask_nightmares'); handled.add('reassure');
+      } else if (!solo && has('ask_men') && has('follow_russians')) {
+        text.push(`${actors('ask_men')} stay with Magda and ask who the three men were while ${actors('follow_russians')} slip away toward the cloakroom. The conversation divides cleanly instead of stopping: one part of the group keeps Magda talking; the other keeps the departing men in sight.`);
+        text.push(`Magda supplies the names—Anton Mahler, Aleksandr “Sasha” Pogodin, and Filip Kramer—and says they were friends in East Germany when they were young. Meanwhile, ${actors('follow_russians')} discover that the men are not lingering outside. They leave with the speed of people who decided together that remaining near you was unsafe.`);
+        handled.add('ask_men'); handled.add('follow_russians');
+      } else if (!solo && has('ask_nightmares') && has('ask_men')) {
+        text.push(`${actors('ask_men')} ask first about the men. Magda names Anton Mahler, Sasha Pogodin, and Filip Kramer, old friends from East Germany drawn back into her life after the Wall fell. When ${actors('ask_nightmares')} ask whether they have anything to do with her sleeplessness, the social explanation finally gives way to the thing she is actually afraid of.`);
+        text.push('She describes herself as a child in the dream, punished and shut in darkness. Something moves nearby. Then there is pain, and after the pain only broken impressions. Speaking it aloud leaves her ghostly pale.');
+        handled.add('ask_nightmares'); handled.add('ask_men');
+      } else if (!solo && has('reassure') && has('ask_men')) {
+        text.push(`${actors('reassure')} tell Magda plainly that she looks ill. The concern lands before ${actors('ask_men')} ask about the men who just left, so her answer feels less like an interrogation and more like an attempt to explain why the evening has frightened her.`);
+        text.push('She names Anton Mahler, Sasha Pogodin, and Filip Kramer. They were friends in East Germany when they were young. Filip contacted her after the Wall fell, and the old circle gradually closed around her again. She admits, almost in the same breath, that returning to Berlin was when the nightmares began.');
+        handled.add('reassure'); handled.add('ask_men');
+      }
+      if (has('ask_nightmares')&&!handled.has('ask_nightmares')) text.push(`${actors('ask_nightmares')} ask Magda to stop speaking around the dream and describe it. She goes still. When she finally answers, she remembers being a child, locked away for disobedience, darkness moving nearby, and pain so complete that everything after it becomes fragments. The telling leaves her pale and visibly shaking.`);
+      if (has('ask_men')&&!handled.has('ask_men')) text.push(`${actors('ask_men')} ask who the men were. Magda names Anton Mahler, Aleksandr “Sasha” Pogodin, and Filip Kramer. They were close in East Germany when they were young. She had not seen the three together for years; Filip contacted her again after the Wall fell, and through him the old circle began closing around her again.`);
+      if (has('reassure')&&!handled.has('reassure')) text.push(`${actors('reassure')} move the conversation away from questioning and toward concern. Magda admits she returned from Berlin because she hoped Hamburg would let her sleep. She has considered doctors. What frightens her is not that they will find something wrong, but that they will insist nothing is wrong at all.`);
+      if (has('follow_russians')&&!handled.has('follow_russians')) text.push(`${actors('follow_russians')} leave before the men can disappear into the city. They do not linger at the cloakroom. Their departure has the efficiency of people who decided together that remaining near you was unsafe. They are gone before a clean confrontation becomes possible, but there is no mistaking the urgency.`);
+      const everyoneFollows=ids.length>0&&ids.every(id=>id==='follow_russians');
+      if (!everyoneFollows && !has('ask_nightmares')) text.push('The subject of sleep returns before the conversation ends even without a direct question. Magda cannot keep it out of ordinary talk. She admits that the same nightmare has followed her since Berlin and that she is frightened of what happens when she closes her eyes.');
+      if (!everyoneFollows && !has('ask_men')) text.push('She also gives you the names of the men almost as an apology for their behavior: Anton, Sasha, and Filip—friends from her youth whose renewed presence in her life has brought more unease than comfort.');
+      if (everyoneFollows) text.push('Following the men means giving up the rest of the conversation with Magda. By the time you return to the Rathaus, she has already gone. The trade is real: you keep the departing men in sight for a little longer, but whatever Magda might have told you tonight will have to be recovered another way.');
+      else text.push('After a short while Magda rises unsteadily and says she should go. Offers of company or a ride are met with genuine gratitude and firm refusal. The party ends without a revelation large enough to explain what happened. It leaves only smaller facts that refuse to fit together—and the sense that the evening did not end when you walked out of the Rathaus.');
+    }
   } else if (s === 'ambush') {
-    if (b === 0) text = solo ? ['You move on instinct before the ambush can settle into a clean pattern. With no second protagonist to cover, every decision is yours: distance, cover, pursuit, survival. The men by the van lose the effortless advantage they expected.'] : (has('protect') ? ['Someone moves toward another protagonist instead of toward safety. It costs distance and buys something more important: nobody inside the lock is isolated when the first shots force the street apart.'] : ['You react differently but not independently. One action creates the opening another needs. The men by the van lose the clean advantage they expected.']);
-    else text = ['The encounter breaks before it becomes a siege. The Dodge tears away through wet traffic, leaving brass, tire smoke, and the certainty that whoever sent those men knows where you are.'];
+    if (b === 0) {
+      if (has('cover')) text.push(`${solo?'You':actors('cover')} move for cover before trying to understand everything at once. The decision trades information for survival and forces the attackers to adjust their angles.`);
+      if (has('protect')) text.push(solo ? 'You keep moving rather than letting the attackers pin you in place. Survival becomes a problem of distance and timing.' : `${actors('protect')} move toward another protagonist instead of taking the cleanest route alone. The choice costs distance but prevents the attackers from isolating anyone.`);
+      if (has('observe')) text.push(`${solo?'You':actors('observe')} look past the first threat long enough to identify the useful details: the running Dodge, the shooters’ spacing, and the route they intend to use if the job turns bad.`);
+      if (has('return_fire')) text.push(`${solo?'You':actors('return_fire')} answer violence with violence. The attackers expected frightened targets; return fire forces them to behave like men who can be hurt.`);
+      if (has('rush_van')) text.push(`${solo?'You':actors('rush_van')} close distance on the Dodge before the crew can reposition. For several seconds the attackers have to choose between the job and protecting their exit.`);
+      text.push('The opening exchange ends without giving anyone control. A window is broken. Someone above the street is shouting. The men by the van are already recalculating.');
+    } else {
+      if (has('escape')) text.push(`${solo?'You':actors('escape')} choose survival over a clean answer and break the geometry of the ambush. The attackers cannot keep a firing solution without exposing themselves to witnesses.`);
+      if (has('suppress')) text.push(`${solo?'You':actors('suppress')} keep pressure on the attackers long enough to create movement where there was none. They stop advancing and begin thinking about the van.`);
+      if (has('disable_van')) text.push(`${solo?'You':actors('disable_van')} go after the vehicle rather than the men. Even partial damage is enough to make their retreat louder, slower, and less controlled than planned.`);
+      if (has('take_prisoner')) text.push(`${solo?'You':actors('take_prisoner')} try to turn one attacker into an answer. The attempt forces the whole group to close ranks around their own man instead of finishing the attack.`);
+      text.push('The Dodge finally tears away through wet traffic. What remains is brass, damaged pavement, witnesses who saw too little, and one certainty: the people behind the surveillance have moved from curiosity to attempted murder.');
+    }
   } else if (s === 'pogodin') {
-    if (b === 0) text = ['You choose your approach and commit. Security is professional, but routine has made it predictable. The mansion gives you a way in, though not a safe one.'];
-    if (b === 1) text = has('rescue') ? ['The people below are alive, barely. Helping them costs time and makes silence harder, but leaving them would mean accepting what this place was built to do.'] : ['You move through the house while the ritual below absorbs everyone’s attention. The closer you get, the less the mansion feels like a home.'];
-    if (b === 2) {
-      const performers = participants.filter(x => actions[x]?.id === 'perform_ritual');
-      if (performers.length) {
-        for (const st of performers) c.flags.marked[st] = true;
-        text = ['The final words do not send the curse back the way you expected. The room opens onto something larger and colder than the basement beneath it.', 'Three shapes approach from beyond the ruined geometry. When the ordeal ends, the Russians are gone and something has touched the ones who completed the rite. You have not been cured. You have been noticed.'];
-      } else text = ['You refuse the ritual’s promised answer. The choice saves you from one certainty and leaves every other problem intact. Somewhere beyond the walls, the three Russians are already moving.'];
+    if (b === 0) {
+      if (has('surveil')) text.push(`${actors('surveil')||'You'} spend time learning the estate before asking it to reveal anything. Guard changes, blind spots, and routines turn wealth into a pattern.`);
+      if (has('sneak')) text.push(`${actors('sneak')||'You'} choose the quiet way in, using the estate’s size against the people paid to control it.`);
+      if (has('bluff')) text.push(`${actors('bluff')||'You'} approach through the front of the problem with a story prepared. Confidence buys time, but every second inside the cover story increases the price of being discovered.`);
+      if (has('wait')) text.push(`${actors('wait')||'You'} let the Inner Circle settle before moving. Patience reduces traffic in the halls and increases the chance that everyone important is already below.`);
+      text.push('However you enter, the public mansion eventually gives way to controlled doors and spaces not meant for ordinary guests. The house has admitted you without becoming safe.');
+    } else if (b === 1) {
+      if (has('rescue')) text.push(`${actors('rescue')||'You'} stop treating the prisoners as background to the investigation. Helping them costs time and makes silence harder, but it also prevents the ritual from remaining an intellectual problem.`);
+      if (has('temple')) text.push(`${actors('temple')||'You'} push toward the ritual space before the house can fully react. Symbols, heat, and voices become stronger as the domestic architecture falls away.`);
+      if (has('chaos')) text.push(`${actors('chaos')||'You'} create trouble above to pull attention away from below. The diversion works well enough to make the guards uncertain which emergency is the real one.`);
+      if (has('police')) text.push(`${actors('police')||'You'} try to make the outside world matter. Calls, names, and authority create pressure, but the estate has spent years learning how to survive ordinary scrutiny.`);
+      text.push('Every route converges on the same fact: Anton, Sasha, and Filip are close, and the rite you came to stop—or use—is already prepared.');
+    } else {
+      if (has('perform_ritual')) text.push(`${actors('perform_ritual')} complete the rite. The final words do not send a curse neatly back toward its source. The geometry opens instead, becoming a depth the basement cannot physically contain. Three shapes approach from somewhere beyond it.`);
+      if (has('rescue_first')) text.push(`${actors('rescue_first')} refuse to let the prisoners become acceptable losses. The ritual loses the clean timing its designers expected, but people who would have been consumed by it are moved out of reach.`);
+      if (has('destroy')) text.push(`${actors('destroy')} attack the structure of the rite itself—symbols, materials, sequence—turning certainty into interruption.`);
+      if (has('withdraw')) text.push(`${actors('withdraw')} refuse the promise that one more step will make everything comprehensible. Leaving does not solve the problem, but it denies the room the decision it was built to extract from you.`);
+      if (has('perform_ritual')) text.push('When the distortion collapses, the Russians are gone. The people who completed the rite are not cured. Something has touched them, identified them, and left a mark that feels less like a wound than a designation.');
+      else text.push('The rite does not resolve cleanly. Whatever was supposed to happen remains unfinished, and the three Russians are already moving beyond the reach of this room.');
     }
   }
   return text;
+}
+function resolutionPresentation(c, seat, lr) {
+  if (!lr) return null;
+  const scene=lr.scene, beat=Number(lr.beat||0);
+  const titles = {
+    gold_plaque: ['The Evening Finds Its Shape','They Know You','What Magda Remembers'],
+    ambush: ['The First Seconds','The Van Leaves'],
+    pogodin: ['Inside the Perimeter','The House Beneath the House','The Choice Becomes Real'],
+  };
+  const contexts = {
+    gold_plaque: ['Your choices during the reception become part of the evening rather than a menu left behind.','The late arrivals react, and the room cannot return to what it was before they entered.','Magda answers as far as she can, then the encounter ends on consequences rather than another repeated question.'],
+    ambush: ['The first reactions resolve into a new tactical situation.','The attack breaks apart and leaves evidence, injuries, and intent behind.'],
+    pogodin: ['Your approach determines how the mansion receives you.','The hidden purpose of the estate becomes immediate and human.','The final decision changes what follows.'],
+  };
+  return {
+    kicker:'Story Lock · Resolution',
+    title:titles[scene]?.[beat] || 'The Consequence',
+    context:contexts[scene]?.[beat] || 'The world answers the choices that were made.',
+    speaker:null,
+    text:Array.isArray(lr.text)?lr.text:[],
+    actions:Object.fromEntries((lr.participants||[]).map(st=>[st,lr.actions?.[st]||null])),
+    acknowledged:{...blankReady(),...(lr.acknowledged||{})},
+  };
 }
 function publicView(c, uid, online = {}) {
   const seat = seatFor(c, uid);
@@ -1068,6 +1214,7 @@ function publicView(c, uid, online = {}) {
     online: !!online[st], lastSeen:c.players[st]?.lastSeen || null,
   }));
   const participant = (c.storyLock.participants || []).includes(seat);
+  const resolutionPending = participant && storyResolutionReady(c) && (c.storyLock.lastResolution?.participants || []).includes(seat);
   const relationshipList = Object.values(c.relationships || {}).filter(r => (r?.seats || []).includes(seat)).map(r => ({ ...r, otherSeat:(r.seats || []).find(x => x !== seat) || null }));
   const base = {
     id:c.id, name:c.name, revision:c.revision, savedAt:c.savedAt || c.createdAt || null, saveReason:c.saveReason || 'campaign', phase:c.phase, seat, testMode:!!c.testMode,
@@ -1079,14 +1226,14 @@ function publicView(c, uid, online = {}) {
     relationshipTypes:RELATIONSHIP_TYPES,
     current:c.current,
     flags:{ ...c.flags, marked:{ self:!!c.flags.marked[seat], partnerKnown:false }, infection:{ self:!!c.flags.infection[seat] } },
-    storyLock:{ active:c.storyLock.active, gate:c.storyLock.gate, ready:c.storyLock.ready, participants:c.storyLock.participants || [], participating:participant, submitted:!!c.storyLock.actions?.[seat], submissions:Object.fromEntries(SEATS.map(st=>[st,!!c.storyLock.actions?.[st]])), lastResolution:c.storyLock.lastResolution },
+    storyLock:{ active:c.storyLock.active, gate:c.storyLock.gate, ready:c.storyLock.ready, participants:c.storyLock.participants || [], participating:participant, submitted:!!c.storyLock.actions?.[seat], submissions:Object.fromEntries(SEATS.map(st=>[st,!!c.storyLock.actions?.[st]])), resolutionPending, resolutionAcknowledged:!!c.storyLock.lastResolution?.acknowledged?.[seat], resolution:resolutionPending?resolutionPresentation(c,seat,c.storyLock.lastResolution):null },
     freeRoam:{ day:c.freeRoam.day, slots:c.freeRoam.slots[seat], partySlotsUsed:Object.fromEntries(otherSeats(c,seat).map(st=>[st,spentCount(c,st)])), partnerSlotsUsed:other?spentCount(c,other):0, lastResult:c.freeRoam.lastResult[seat] ? { ...c.freeRoam.lastResult[seat], characterEcho:freeRoamCharacterEcho(own?.character,c.freeRoam.lastResult[seat]?.location) } : null, locations:Object.fromEntries(Object.entries(FREE_ROAM_LOCATIONS).map(([id,x])=>[id,{name:x.name,art:x.art,frame:x.frame,actions:Object.fromEntries(Object.entries(x.actions).map(([aid,a])=>[aid,{label:a.label,move:a.move,attribute:a.attribute || (MOVE_MAP[a.move]?.attribute || null)}]))}])) },
     journal:{ shared:c.journal.shared.map(x=>({...x,clue:CLUES[x.clueId]})), private:c.journal.private[seat].map(x=>({...x,clue:CLUES[x.clueId]})) },
     invite:{ canManage:seat==='A'&&!c.testMode, disabledReason:c.testMode?'Single-player admin test campaigns do not accept invitations.':null, seats:{ B:{claimed:!!c.players.B,code:seat==='A'&&!c.testMode&&!c.players.B?(c.invites?.B || null):null}, C:{claimed:!!c.players.C,code:seat==='A'&&!c.testMode&&!c.players.C?(c.invites?.C || null):null} } },
     betaComplete:c.flags.betaComplete,
     capabilities:{ campaignReset:seat==='A', notifications:true, mobileNav:true, adminSinglePlayerTest:!!c.testMode },
   };
-  if (c.current.mode === 'story_lock' && participant) { base.story = personalizeStory(c,seat,sharedStoryText(c)); base.choices = lockChoices(c,seat); }
+  if (c.current.mode === 'story_lock' && participant && !resolutionPending) { base.story = personalizeStory(c,seat,sharedStoryText(c)); base.choices = c.storyLock.actions?.[seat] ? [] : lockChoices(c,seat); }
   return base;
 }
 
@@ -1110,7 +1257,7 @@ function cloneCampaignState(source, newId, newName) {
   const copy = JSON.parse(JSON.stringify(source));
   copy.id = newId;
   copy.name = String(newName || `${source.name || 'Black Madonna'} — Saved State`).trim().slice(0,80);
-  copy.version = 5;
+  copy.version = 6;
   copy.sourceCampaignId = source.id;
   copy.sourceRevision = Number(source.revision || 0);
   copy.createdAt = Date.now();
@@ -1700,6 +1847,7 @@ export class CampaignRoom {
         if (c.current.mode === 'story_gate' && !c.storyLock.gate?.forced) c.storyLock.ready[seat] = false;
       } else if (b.type === 'lock_action') {
         if (c.current.mode !== 'story_lock' || !(c.storyLock.participants || []).includes(seat)) return json({ error:'Your protagonist is not participating in this Story Lock.' },409);
+        if (storyResolutionReady(c)) return json({ error:'The previous choice has already resolved. Read the consequence and continue before choosing again.' },409);
         if (c.storyLock.actions[seat]) return json({ error:'Your action is already locked.' },409);
         const allowed=lockChoices(c,seat), selected=allowed.find(x=>x.id===b.actionId); if (!selected) return json({ error:'That action is not available.' },400);
         let roll=null;
@@ -1711,18 +1859,39 @@ export class CampaignRoom {
         const minimumSubmissions=c.testMode?1:2;
         const allSubmitted=participants.length>=minimumSubmissions && participants.every(st=>!!c.storyLock.actions[st]);
         if (allSubmitted) {
+          const scene=c.current.scene, beat=Number(c.current.beat || 0);
           const resolution=resolveJoint(c,c.storyLock.actions), rolls=Object.fromEntries(participants.map(st=>[st,c.storyLock.actions[st].roll]));
-          if (c.current.scene==='ambush') for (const st of participants) if (rolls[st]?.outcome==='failure'&&!c.players[st].character.wounds.includes('Serious Wound')) c.players[st].character.wounds.push('Serious Wound');
-          c.storyLock.lastResolution={ text:resolution, actions:Object.fromEntries(participants.map(st=>[st,c.storyLock.actions[st]])), participants:[...participants], at:Date.now() };
-          const scene=c.current.scene, beat=c.current.beat; c.storyLock.actions={};
-          if (scene==='gold_plaque'&&beat<2) c.current.beat++;
-          else if (scene==='gold_plaque') { c.flags.goldPlaqueDone=true; for (const st of participants) c.flags.infection[st]=true; finishStory(c); }
-          else if (scene==='ambush'&&beat<1) c.current.beat++;
-          else if (scene==='ambush') { c.flags.ambushDone=true; finishStory(c); }
-          else if (scene==='pogodin'&&beat<2) c.current.beat++;
-          else if (scene==='pogodin') { c.flags.betaComplete=true; c.phase='beta_complete'; c.current={mode:'epilogue',scene:'chapter1_boundary',beat:0}; c.storyLock.active=false; c.storyLock.participants=[]; }
+          if (scene==='ambush') for (const st of participants) if (rolls[st]?.outcome==='failure'&&!c.players[st].character.wounds.includes('Serious Wound')) c.players[st].character.wounds.push('Serious Wound');
+          c.storyLock.lastResolution={ pending:true, scene, beat, text:resolution, actions:Object.fromEntries(participants.map(st=>[st,c.storyLock.actions[st]])), participants:[...participants], acknowledged:blankReady(), at:Date.now() };
+          c.storyLock.actions={};
           pushLog(c,'joint_action_resolved',null,{scene,beat,rolls,participants});
         } else for (const st of participants.filter(x=>x!==seat)) if (!c.storyLock.actions[st]&&!this.presence()[st]) await safeNotify(this.env,c.players[st],'Your decision is required in the current Story Lock.');
+      } else if (b.type === 'story_resolution_continue') {
+        const lr=c.storyLock.lastResolution;
+        if (c.current.mode!=='story_lock' || !lr?.pending) return json({error:'There is no resolved story beat waiting to continue.'},409);
+        if (!(lr.participants || []).includes(seat)) return json({error:'This resolution belongs to the protagonists who entered the Story Lock.'},403);
+        lr.acknowledged={...blankReady(),...(lr.acknowledged||{})};
+        lr.acknowledged[seat]=true;
+        pushLog(c,'story_resolution_acknowledged',seat,{scene:lr.scene,beat:lr.beat});
+        const participants=(lr.participants || []).filter(st=>c.players?.[st]?.character);
+        const allRead=participants.every(st=>!!lr.acknowledged[st]);
+        if (allRead) {
+          const scene=lr.scene, beat=Number(lr.beat || 0), finalBeat=beat>=storyMaxBeat(scene);
+          if (!finalBeat) {
+            c.current={mode:'story_lock',scene,beat:beat+1};
+            c.storyLock.lastResolution=null;
+            c.storyLock.actions={};
+          } else if (scene==='gold_plaque') {
+            c.flags.goldPlaqueDone=true; for (const st of participants) c.flags.infection[st]=true; finishStory(c);
+          } else if (scene==='ambush') {
+            c.flags.ambushDone=true; finishStory(c);
+          } else if (scene==='pogodin') {
+            const performers=participants.filter(st=>lr.actions?.[st]?.id==='perform_ritual');
+            for (const st of performers) c.flags.marked[st]=true;
+            c.flags.betaComplete=true; c.phase='beta_complete'; c.current={mode:'epilogue',scene:'chapter1_boundary',beat:0}; c.storyLock.active=false; c.storyLock.actions={}; c.storyLock.participants=[]; c.storyLock.lastResolution=null;
+          }
+          pushLog(c,'story_beat_advanced',null,{scene,beat,finalBeat,participants});
+        }
       } else if (b.type === 'free_roam_action') {
         const lockedParticipant=c.current.mode==='story_lock'&&(c.storyLock.participants || []).includes(seat);
         const committedAtGate=c.current.mode==='story_gate'&&!!(c.storyLock.gate?.forced?c.storyLock.gate?.acknowledged?.[seat]:c.storyLock.ready?.[seat]);
@@ -1928,7 +2097,7 @@ export default {
     if (url.pathname === '/api/health') {
       const smsLoginMode = twilioVerifyConfigured(env) ? 'twilio_verify' : (twilioMessagingConfigured(env) ? 'twilio_messages' : null);
       return json({
-        ok:true, build:'black-madonna-beta-12.2-narration-progress-v3',
+        ok:true, build:'black-madonna-beta-12.3-narrative-flow',
         elevenlabsConfigured:!!elevenKeyInfo(env).key,
         elevenlabsBinding:elevenKeyInfo(env).binding,
         kultElevenlabsConfigured:!!env.KULT_ELEVENLABS_API_KEY,
@@ -1967,7 +2136,10 @@ export default {
         narrationModel:MODEL_ID,
         narrationStreaming:true,
         narrationProgress:true,
-        adminSinglePlayerTestMode:true
+        adminSinglePlayerTestMode:true,
+        storyResolutionPages:true,
+        narrativeFlowRewrite:true,
+        freeRoamRendererRestored:true
       },200,{'cache-control':'no-store'});
     }
     if (url.pathname === '/api/config') return json({ vapidPublicKey: env.VAPID_PUBLIC_KEY || null, pushDelivery: false });

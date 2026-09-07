@@ -106,7 +106,7 @@ const RELATIONSHIP_TYPES = {
   former_partners: 'Former partners, still close',
   complicated: 'Complicated history',
   recent_acquaintances: 'Recent acquaintances',
-  strangers: 'Strangers before the campaign',
+  strangers: 'Strangers until recently',
 };
 const EAST_GERMAN_REGIONS = ['East Berlin / Brandenburg','Saxony / Thuringia','Mecklenburg / Saxony-Anhalt'];
 
@@ -781,7 +781,7 @@ function darkSecretEcho(character, scene) {
   if (!character?.darkSecret) return null;
   if (scene === 'pogodin' && character.darkSecret === 'occult_fascination') return 'Some of what you see below the mansion resembles things you once pursued because they were forbidden, obscure, or beautiful. None of it feels beautiful now.';
   if (scene === 'ambush' && character.darkSecret === 'flashbacks') return 'The present threatens to split around the edges. You force yourself to keep the street in front of you separate from the place your memory is trying to impose over it.';
-  if (scene === 'gold_plaque' && character.darkSecret === 'strange_death') return 'For one moment, the Russians’ reaction gives you the same cold sensation as the death you have never been able to explain: the certainty that someone else knows more than you do.';
+  if (scene === 'gold_plaque' && character.darkSecret === 'strange_death') return 'For one moment, the three men’s reaction gives you the same cold sensation as the death you have never been able to explain: the certainty that someone else knows more than you do.';
   return null;
 }
 function familyEcho(character, scene) {
@@ -819,10 +819,10 @@ function relationshipEcho(c, seat, scene) {
   const rel = acceptedRelationships(c, seat)[0];
   if (!rel) return null;
   const other = rel.seats.find(x => x !== seat);
-  const otherName = c.players?.[other]?.character?.name || 'the other protagonist';
+  const otherName = c.players?.[other]?.character?.name || 'the other person';
   const type = rel.type;
   if (scene === 'gold_plaque') {
-    if (type === 'married') return `${otherName} is not merely another investigator in the room. You know the private rhythms of their attention well enough to notice when something has unsettled them.`;
+    if (type === 'married') return `${otherName} is more familiar to you than anyone else in the room. You know the private rhythms of their attention well enough to notice when something has unsettled them.`;
     if (type === 'dating' || type === 'engaged') return `You and ${otherName} arrived with a relationship already in motion. Every glance between you carries information the room cannot read.`;
     if (type === 'siblings') return `You have known ${otherName} long enough to recognize the difference between ordinary discomfort and the moment they become truly alert.`;
     if (type === 'close_friends') return `${otherName} is one of the few people whose instincts you trust without demanding an explanation first.`;
@@ -860,21 +860,21 @@ function partyHistoryEcho(c, seat) {
   if (rel) return null;
   const otherNames = otherSeats(c, seat, true).map(st => c.players?.[st]?.character?.name).filter(Boolean);
   if (!otherNames.length) return null;
-  if (otherNames.length === 1) return `You and ${otherNames[0]} do not need a fabricated shared past. If you did not arrive together, a mutual acquaintance at the reception has already made the introduction, and the evening gives you time to decide what you make of one another.`;
-  return `You are not all old friends. Where prior relationships do not already connect the group, mutual acquaintances at the reception make the introductions. By the time dinner ends, ${otherNames.join(' and ')} are no longer anonymous faces in the crowd.`;
+  if (otherNames.length === 1) return `If you did not arrive with ${otherNames[0]}, a mutual acquaintance makes the introduction before dinner. The evening gives you enough time to form an impression without forcing intimacy that is not there.`;
+  return `You are not all old friends. Mutual acquaintances make the introductions where they are needed. By the time dinner ends, ${otherNames.join(' and ')} are no longer anonymous faces in the crowd.`;
 }
 function partyFlowEcho(c, seat, scene, beat) {
   const rel = acceptedRelationships(c, seat)[0];
   const others = otherSeats(c, seat, true);
   if (!others.length) return null;
   const other = rel?.seats?.find(x => x !== seat) || others[0];
-  const otherName = c.players?.[other]?.character?.name || 'the other protagonist';
+  const otherName = c.players?.[other]?.character?.name || 'the other person';
   if (scene === 'gold_plaque' && beat === 0) {
     if (rel?.type === 'married') return `You arrived with ${otherName}. The two of you have spent enough evenings in public together to divide a room without discussing it: one conversation, one glance, one quiet check that the other is all right.`;
     if (['dating','engaged'].includes(rel?.type)) return `You and ${otherName} arrive with a private familiarity that makes the formal reception easier to tolerate. When one of you gets trapped in a conversation, the other already knows the look that means rescue me.`;
     if (rel?.type === 'siblings') return `${otherName} has known you too long to be impressed by the evening dress or the chandeliers. The familiarity is useful; the room can remain strange without the two of you having to be strangers inside it.`;
     if (rel?.type === 'close_friends') return `You and ${otherName} settle into the reception as friends do: separating when conversation pulls you apart, finding one another again without needing to plan it.`;
-    return `You and ${otherName} are not required to have a convenient shared history. If you did not arrive together, a mutual acquaintance introduces you before dinner. By the time the dance begins, you have had hours—not seconds—to decide whether the other person is interesting, useful, irritating, or some combination of all three.`;
+    return `If you did not arrive with ${otherName}, a mutual acquaintance introduces you before dinner. By the time the dance begins, you have had hours—not seconds—to decide whether the other person is interesting, useful, irritating, or some combination of all three.`;
   }
   if (scene === 'gold_plaque' && beat === 1) return `When the three men look toward your part of the room, ${otherName} notices the change too. Whatever else you disagree about, neither of you has to explain that this reaction is wrong.`;
   if (scene === 'gold_plaque' && beat === 2 && rel) return relationshipEcho(c, seat, scene);
@@ -889,8 +889,11 @@ function personalizeStory(c, seat, shared) {
   const flow = partyFlowEcho(c, seat, c.current.scene, c.current.beat);
   if (flow) text.splice(Math.min(1, text.length), 0, flow);
   const personal = [];
-  if (c.current.scene === 'gold_plaque' && c.current.beat === 0) personal.push(invitationEcho(character));
-  personal.push(magdaEcho(character, c.current.scene), occupationEcho(character, c.current.scene), familyEcho(character, c.current.scene), darkSecretEcho(character, c.current.scene));
+  const beat = Number(c.current.beat || 0);
+  if (c.current.scene === 'gold_plaque' && beat === 0) personal.push(invitationEcho(character));
+  personal.push(occupationEcho(character, c.current.scene), familyEcho(character, c.current.scene));
+  if (c.current.scene !== 'gold_plaque' || beat >= 1) personal.push(magdaEcho(character, c.current.scene));
+  if (c.current.scene !== 'gold_plaque' || beat >= 1) personal.push(darkSecretEcho(character, c.current.scene));
   if (c.players?.[seat]?.entry?.pending) personal.unshift(c.players[seat].entry.text);
   return { ...shared, text, personal: personal.filter(Boolean) };
 }
@@ -919,14 +922,14 @@ function sharedStoryText(c) {
       text: [
         'Rain darkens the stone outside Hamburg’s Rathaus and follows the guests inside as damp wool and shining umbrellas. The German Authors Association has filled the lobby with writers, publishers, academics, patrons, officials, and the people whose work brings them close to such circles without ever making them entirely part of them.',
         'At eight, the crowd is guided beneath a domed ceiling and crystal chandeliers. White silk covers the oak tables. Waiters move through the hall with salmon pâté and roast venison, then apple tart and sorbet. Conversation starts cautiously, loosens with wine, and eventually becomes louder than the speeches.',
-        'Karl Dietmar gives the keynote. A nearly unknown poet named Leon Schütz receives the Gold Plaque to courteous applause. Nothing sinister happens. That matters. The campaign begins by giving you an evening in which the worst plausible mistake is saying the wrong thing to the wrong editor.',
-        'After dinner, the ceremony dissolves into smaller rooms and a dance. A waitress flirts with anyone who encourages her. A manager is drunk enough to stop pretending otherwise. A political argument near the doors has attracted an audience. There is time to talk, observe, and learn how the other protagonists occupy a room before anything asks you to trust them.'
+        'Karl Dietmar gives the keynote. A nearly unknown poet named Leon Schütz receives the Gold Plaque to courteous applause. Nothing sinister happens. That matters. For a while, the worst plausible mistake is saying the wrong thing to the wrong editor.',
+        'After dinner, the ceremony dissolves into smaller rooms and a dance. A waitress flirts with anyone who encourages her. A manager is drunk enough to stop pretending otherwise. A political argument near the doors has attracted an audience. There is time to talk, observe, and learn the people around you before anything gives you a reason to distrust the room.'
       ], art: null
     };
     if (b === 1) return {
       kicker: 'Hamburg Rathaus · Near midnight',
       title: 'Four Late Arrivals',
-      context: 'The party has begun to empty when a woman and three middle-aged men enter in formal evening clothes and are shown to a table near yours.',
+      context: 'The party has begun to empty when Magda Orlova arrives with three middle-aged men in formal evening clothes and is shown to a table near yours.',
       speaker: { name: 'A nearby guest', line: 'A little late for the prize, aren’t they?' },
       text: [
         'The woman is familiar first. Dark hair, a full-length gown, a short white cape handed to a steward—and then the face resolves into Magda Orlova. Whatever place she occupies in your past, seeing her here should be ordinary enough.',
@@ -956,11 +959,11 @@ function sharedStoryText(c) {
       text: [
         'The street is wet enough to double every light. The Dodge appears at the far end, slows, and keeps slowing. Its plates are obscured by grime applied a little too carefully to be accidental.',
         'The side door opens before the van has fully settled. The men who step out do not posture, shout, or demand anything. Their silence is practiced. Their attention moves between exits, hands, and bodies with the efficiency of people who planned the first seconds before arriving.',
-        'This is the instant before violence becomes inevitable. There is still room to choose what you protect first: yourself, another protagonist, information, distance, or the chance to identify who sent them.'
+        'This is the instant before violence becomes inevitable. There is still room to choose what you protect first: yourself, someone beside you, information, distance, or the chance to identify who sent them.'
       ], art: '/media/art/scenes/ch01_medical_police_research_collage.webp'
     };
     return {
-      kicker: 'Story Lock · Combat beat', title: 'A Bad Plan Coming Apart',
+      kicker: 'Berlin · Moments later', title: 'A Bad Plan Coming Apart',
       context: 'The ambush has failed to remain clean. That does not mean it is over.',
       speaker: { name: 'One of the attackers', line: 'Move. Now.' },
       text: [
@@ -998,18 +1001,18 @@ function sharedStoryText(c) {
       text: [
         'Anton, Sasha, and Filip no longer look like distant names in a file. They are frightened men trapped inside a room built to make fear useful. Whatever they have done, whatever they intended for you, the ritual asks you to make their terror part of the mechanism.',
         'The words are ready. The geometry is ready. Your evidence is incomplete. The people in the cells are still alive. Every choice that brought you underground now competes for priority at the same time.',
-        'There is no neutral version of what happens next. Completing the rite, breaking it, delaying it for the prisoners, or walking away will each become part of the campaign’s history.'
+        'There is no neutral version of what happens next. Completing the rite, breaking it, delaying it for the prisoners, or walking away will shape everything that follows.'
       ], art: '/media/art/scenes/ch01_pogodin_ritual_collage.webp'
     };
   }
-  return { kicker: 'The Black Madonna', title: 'Waiting', context:'The campaign is between authored scenes.', speaker:null, text: ['The story has not yet decided what it wants from you.'], art: null };
+  return { kicker: 'The Black Madonna', title: 'Waiting', context:'For a moment, nothing moves except what has already been set in motion.', speaker:null, text: ['There is nothing to do yet but listen to the silence and wait for it to break.'], art: null };
 }
 function lockChoices(c, seat) {
   const s = c.current.scene, b = c.current.beat;
   if (storyResolutionReady(c)) return [];
   if (s === 'gold_plaque' && b === 0) return [
     { id: 'mingle', label: 'Mingle and read the room', move: 'observe_situation' },
-    { id: 'stay_together', label: c.testMode ? 'Keep to the edge and observe' : 'Stay close to the other protagonists', move: null },
+    { id: 'stay_together', label: c.testMode ? 'Keep to the edge and observe' : 'Stay close to the others', move: null },
     { id: 'work_room', label: 'Use your professional contacts', move: 'influence_other' },
     { id: 'watch_exits', label: 'Watch the entrances and exits', move: 'observe_situation' },
   ];
@@ -1027,7 +1030,7 @@ function lockChoices(c, seat) {
   ];
   if (s === 'ambush') return b === 0 ? [
     { id: 'cover', label: 'Get to cover and assess the threat', move: 'act_under_pressure' },
-    { id: 'protect', label: c.testMode ? 'Protect your position and keep moving' : 'Protect another protagonist', move: 'act_under_pressure' },
+    { id: 'protect', label: c.testMode ? 'Protect your position and keep moving' : 'Protect someone else', move: 'act_under_pressure' },
     { id: 'observe', label: 'Find the attackers and the cleanest exit', move: 'observe_situation' },
     { id: 'return_fire', label: 'Return fire', move: 'engage_in_combat' },
     { id: 'rush_van', label: 'Rush the van before they can reposition', move: 'act_under_pressure' },
@@ -1087,7 +1090,7 @@ function resolveJoint(c, actions) {
       if (has('mingle')&&!handled.has('mingle')) text.push(`${solo?'You':actors('mingle')} circulate instead of waiting for the evening to become important. Editors avoid authors they owe, a revolutionary turns reunification into an argument, a waitress enjoys the freedom to be scandalous, and a manager steadily loses his battle with the wine. The room stops being scenery.`);
       if (has('work_room')&&!handled.has('work_room')) text.push(`${solo?'You':actors('work_room')} make professional conversation do useful work. Names, affiliations, and reputations begin attaching themselves to faces. Nothing discovered is sinister; it simply gives you people to recognize later.`);
       if (has('watch_exits')&&!handled.has('watch_exits')) text.push(`${solo?'You':actors('watch_exits')} keep an eye on the entrances long enough to learn the evening’s rhythm: guests leaving in clusters, staff relaxing after the formal program, coats beginning to disappear from the cloakroom. There is no reason yet to expect danger.`);
-      if (has('stay_together')&&!handled.has('stay_together')) text.push(solo ? 'You stay near the edge of the social current and let the room come to you. It is a quieter way to learn who seeks attention and who avoids it.' : `${actors('stay_together')} spend enough of the evening near one another that coordination stops being an abstract campaign convenience. You learn small things: who interrupts, who listens, who notices a change in tone before anyone says why.`);
+      if (has('stay_together')&&!handled.has('stay_together')) text.push(solo ? 'You stay near the edge of the social current and let the room come to you. It is a quieter way to learn who seeks attention and who avoids it.' : `${actors('stay_together')} spend enough of the evening near one another that moving together begins to feel natural. You learn small things: who interrupts, who listens, who notices a change in tone before anyone says why.`);
       text.push('By the time the dance begins, the Rathaus has done what a good party is supposed to do: it has become familiar. That is why four people arriving near midnight feel like an interruption rather than another entrance.');
     } else if (b === 1) {
       const handled=new Set();
@@ -1142,7 +1145,7 @@ function resolveJoint(c, actions) {
   } else if (s === 'ambush') {
     if (b === 0) {
       if (has('cover')) text.push(`${solo?'You':actors('cover')} move for cover before trying to understand everything at once. The decision trades information for survival and forces the attackers to adjust their angles.`);
-      if (has('protect')) text.push(solo ? 'You keep moving rather than letting the attackers pin you in place. Survival becomes a problem of distance and timing.' : `${actors('protect')} move toward another protagonist instead of taking the cleanest route alone. The choice costs distance but prevents the attackers from isolating anyone.`);
+      if (has('protect')) text.push(solo ? 'You keep moving rather than letting the attackers pin you in place. Survival becomes a problem of distance and timing.' : `${actors('protect')} move toward someone else instead of taking the cleanest route alone. The choice costs distance but prevents the attackers from isolating anyone.`);
       if (has('observe')) text.push(`${solo?'You':actors('observe')} look past the first threat long enough to identify the useful details: the running Dodge, the shooters’ spacing, and the route they intend to use if the job turns bad.`);
       if (has('return_fire')) text.push(`${solo?'You':actors('return_fire')} answer violence with violence. The attackers expected frightened targets; return fire forces them to behave like men who can be hurt.`);
       if (has('rush_van')) text.push(`${solo?'You':actors('rush_van')} close distance on the Dodge before the crew can reposition. For several seconds the attackers have to choose between the job and protecting their exit.`);
@@ -1187,14 +1190,14 @@ function resolutionPresentation(c, seat, lr) {
     pogodin: ['Inside the Perimeter','The House Beneath the House','The Choice Becomes Real'],
   };
   const contexts = {
-    gold_plaque: ['Your choices during the reception become part of the evening rather than a menu left behind.','The late arrivals react, and the room cannot return to what it was before they entered.','Magda answers as far as she can, then the encounter ends on consequences rather than another repeated question.'],
-    ambush: ['The first reactions resolve into a new tactical situation.','The attack breaks apart and leaves evidence, injuries, and intent behind.'],
-    pogodin: ['Your approach determines how the mansion receives you.','The hidden purpose of the estate becomes immediate and human.','The final decision changes what follows.'],
+    gold_plaque: ['The reception settles around what you did, and the evening keeps moving.','The late arrivals react, and the room cannot return to what it was before they entered.','Magda answers as far as she can. When the conversation ends, what remains is less an explanation than a set of facts that refuse to sit comfortably together.'],
+    ambush: ['The first seconds close behind you. The street is different now.','The attack breaks apart and leaves evidence, injuries, and intent behind.'],
+    pogodin: ['The estate reveals itself according to the way you entered it.','The hidden purpose of the estate becomes immediate and human.','The final decision changes what follows.'],
   };
   return {
-    kicker:'Story Lock · Resolution',
+    kicker:({gold_plaque:['Hamburg Rathaus · Later','Hamburg Rathaus · Near midnight','Hamburg Rathaus · After midnight'],ambush:['Berlin · Night','Berlin · Moments later'],pogodin:["Pogodin Estate · Night","Beneath Pogodin’s Mansion","Beneath Pogodin’s Mansion"]}[scene]?.[beat] || 'A moment later'),
     title:titles[scene]?.[beat] || 'The Consequence',
-    context:contexts[scene]?.[beat] || 'The world answers the choices that were made.',
+    context:contexts[scene]?.[beat] || 'What follows cannot be taken back.',
     speaker:null,
     text:Array.isArray(lr.text)?lr.text:[],
     actions:Object.fromEntries((lr.participants||[]).map(st=>[st,lr.actions?.[st]||null])),
@@ -2097,7 +2100,7 @@ export default {
     if (url.pathname === '/api/health') {
       const smsLoginMode = twilioVerifyConfigured(env) ? 'twilio_verify' : (twilioMessagingConfigured(env) ? 'twilio_messages' : null);
       return json({
-        ok:true, build:'black-madonna-beta-12.3-narrative-flow',
+        ok:true, build:'black-madonna-beta-12.4-immersive-narration',
         elevenlabsConfigured:!!elevenKeyInfo(env).key,
         elevenlabsBinding:elevenKeyInfo(env).binding,
         kultElevenlabsConfigured:!!env.KULT_ELEVENLABS_API_KEY,
@@ -2139,7 +2142,9 @@ export default {
         adminSinglePlayerTestMode:true,
         storyResolutionPages:true,
         narrativeFlowRewrite:true,
-        freeRoamRendererRestored:true
+        freeRoamRendererRestored:true,
+        immersiveNarration:true,
+        personalObservationFirst:true
       },200,{'cache-control':'no-store'});
     }
     if (url.pathname === '/api/config') return json({ vapidPublicKey: env.VAPID_PUBLIC_KEY || null, pushDelivery: false });
